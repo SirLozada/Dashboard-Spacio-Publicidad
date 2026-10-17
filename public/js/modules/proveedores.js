@@ -1,7 +1,7 @@
 import { api, qs } from '../api.js';
 import { icon } from '../icons.js';
 import { esAdmin } from '../state.js';
-import { esc, dinero, debounce, modal, toast, confirmar, campo, leerFormulario, vacio } from '../ui.js';
+import { esc, dinero, debounce, modal, toast, confirmar, campo, leerFormulario, vacio, botonPapelera, conectarPapeleras } from '../ui.js';
 
 // Número para wa.me: sólo dígitos (debe incluir el código de país).
 const soloDigitos = (t) => String(t || '').replace(/\D/g, '');
@@ -85,7 +85,8 @@ export default {
         ? `<div class="grid-cards">${lista
             .map(
               (p) => `<article class="prov-card" data-id="${p.id}">
-                <div>
+                <div class="prov-head">
+                  ${esAdmin() ? botonPapelera(`data-borrar-proveedor="${p.id}"`, 'Eliminar proveedor') : ''}
                   <h3>${esc(p.nombre)}</h3>
                   ${p.servicios ? `<div class="services">${esc(p.servicios)}</div>` : ''}
                 </div>
@@ -115,6 +116,16 @@ export default {
       diferido();
     });
     $('#btn-nuevo').addEventListener('click', () => fichaProveedor(null, { alGuardar: cargar }));
+    conectarPapeleras($('#lista'), '[data-borrar-proveedor]', {
+      mensaje: (b) => {
+        const p = lista.find((x) => String(x.id) === b.dataset.borrarProveedor);
+        const aviso = p.total_materiales ? ` Sus ${p.total_materiales} materiales quedarán sin proveedor asignado.` : '';
+        return `¿Eliminar el proveedor "${p.nombre}"?${aviso}`;
+      },
+      eliminar: (b) => api(`/proveedores/${b.dataset.borrarProveedor}`, { method: 'DELETE' }),
+      alEliminar: cargar,
+      exito: 'Proveedor eliminado',
+    });
     $('#lista').addEventListener('click', (e) => {
       if (e.target.closest('[data-stop]')) return;
       const card = e.target.closest('[data-id]');

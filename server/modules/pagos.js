@@ -143,6 +143,19 @@ router.post('/tasas', async (req, res) => {
   res.status(201).json(await db.get('SELECT * FROM tasas_bcv WHERE fecha_valor = ?', fecha));
 });
 
+// Eliminar una tasa registrada manualmente (las leídas del BCV no se borran).
+// Los pagos ya registrados conservan su propia tasa y no cambian.
+router.delete('/tasas/:fecha', async (req, res) => {
+  const t = await db.get('SELECT * FROM tasas_bcv WHERE fecha_valor = ?', req.params.fecha);
+  if (!t) throw new HttpError(404, 'Tasa no encontrada');
+  if (t.fuente === 'bcv') throw new HttpError(400, 'Las tasas leídas del BCV no se eliminan');
+  await db.transaction(async (tx) => {
+    await tx.run('DELETE FROM tasas_bcv WHERE fecha_valor = ?', t.fecha_valor);
+    await registrarHistorial(tx, { entidad: 'tasa', entidadId: 0, accion: 'tasa_eliminada', detalle: { fecha_valor: t.fecha_valor, tasa: t.tasa }, usuarioId: req.usuario.id });
+  });
+  res.json({ ok: true });
+});
+
 // --- Colaboradores ---
 
 router.use(
@@ -256,10 +269,18 @@ router.patch('/asignaciones/:id', async (req, res) => {
 router.delete('/asignaciones/:id', async (req, res) => {
   const a = await obtenerAsignacion(req.params.id);
   if (!a) throw new HttpError(404, 'Asignación no encontrada');
-  if (a.total_movimientos > 0) throw new HttpError(400, 'No se puede eliminar: ya tiene pagos registrados');
+  // Sólo si no hay dinero abonado (sin pagos, o con todos sus pagos anulados).
+  if (Math.abs(a.abonado_usd) > TOLERANCIA) {
+    throw new HttpError(400, `No se puede eliminar: tiene ${'$'}${a.abonado_usd.toFixed(2)} abonados. Anula esos pagos primero.`);
+  }
   await db.transaction(async (tx) => {
+    await tx.run('DELETE FROM abonos WHERE asignacion_id = ?', a.id);
     await tx.run('DELETE FROM asignaciones WHERE id = ?', a.id);
-    await registrarHistorial(tx, { entidad: 'asignacion', entidadId: a.id, accion: 'eliminada', detalle: { colaborador: a.colaborador, proyecto: a.proyecto, monto_acordado_usd: a.monto_acordado_usd }, usuarioId: req.usuario.id });
+    await registrarHistorial(tx, {
+      entidad: 'asignacion', entidadId: a.id, accion: 'eliminada',
+      detalle: { colaborador: a.colaborador, proyecto: a.proyecto, monto_acordado_usd: a.monto_acordado_usd, movimientos_anulados: a.total_movimientos },
+      usuarioId: req.usuario.id,
+    });
   });
   res.json({ ok: true });
 });

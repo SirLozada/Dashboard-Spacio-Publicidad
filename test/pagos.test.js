@@ -179,3 +179,30 @@ test('resumen, semana y permisos', async () => {
   await pedir('/auth/login', { method: 'POST', body: { usuario: 'fernando', password: 'clave-de-prueba' } });
   assert.strictEqual((await pedir(`/trabajos/${asignacion.trabajo_id}`, { method: 'DELETE' })).status, 400);
 });
+
+test('eliminar: asignación sin dinero abonado, tasa manual y usuario', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Borrar', estatus: 'aprobado' } });
+  const c = await pedir('/pagos/colaboradores', { method: 'POST', body: { nombre: 'Temporal' } });
+  const a = await pedir('/pagos/asignaciones', { method: 'POST', body: { trabajo_id: t.datos.id, colaborador_id: c.datos.id, monto_acordado_usd: 50 } });
+  const ab = await pedir(`/pagos/asignaciones/${a.datos.id}/abonos`, {
+    method: 'POST',
+    body: { fecha: HOY, moneda: 'USD', monto: 20, tasa_modo: 'manual', tasa_manual: 100, confirmar_tasa: true },
+  });
+  // Con dinero abonado no se puede eliminar; tampoco el colaborador asignado
+  assert.strictEqual((await pedir(`/pagos/asignaciones/${a.datos.id}`, { method: 'DELETE' })).status, 400);
+  assert.strictEqual((await pedir(`/pagos/colaboradores/${c.datos.id}`, { method: 'DELETE' })).status, 400);
+  // Anulado el pago, sí
+  await pedir(`/pagos/asignaciones/${a.datos.id}/abonos`, { method: 'POST', body: { tipo: 'ajuste', ajusta_abono_id: ab.datos.abono.id, motivo_ajuste: 'Prueba' } });
+  assert.strictEqual((await pedir(`/pagos/asignaciones/${a.datos.id}`, { method: 'DELETE' })).status, 200);
+  assert.strictEqual((await pedir(`/pagos/colaboradores/${c.datos.id}`, { method: 'DELETE' })).status, 200);
+  assert.strictEqual((await pedir(`/trabajos/${t.datos.id}`, { method: 'DELETE' })).status, 200);
+
+  await pedir('/pagos/tasas', { method: 'POST', body: { fecha_valor: '2025-01-03', tasa: 52, confirmada: true } });
+  assert.strictEqual((await pedir('/pagos/tasas/2025-01-03', { method: 'DELETE' })).status, 200);
+  assert.strictEqual((await pedir('/pagos/tasas/2026-01-09', { method: 'DELETE' })).status, 400); // leída del BCV
+
+  const u = await pedir('/usuarios', { method: 'POST', body: { usuario: 'borrame', nombre: 'Borrame', password: 'temporal123' } });
+  assert.strictEqual((await pedir(`/usuarios/${u.datos.id}`, { method: 'DELETE' })).status, 200);
+  const yo = (await pedir('/auth/me')).datos;
+  assert.strictEqual((await pedir(`/usuarios/${yo.id}`, { method: 'DELETE' })).status, 400);
+});

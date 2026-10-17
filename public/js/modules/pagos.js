@@ -1,7 +1,7 @@
 import { api, qs } from '../api.js';
 import { filtroAprobados } from '../state.js';
 import { icon } from '../icons.js';
-import { esc, fecha, fechaHora, hoyIso, debounce, modal, toast, campo, leerFormulario, vacio } from '../ui.js';
+import { esc, fecha, fechaHora, hoyIso, debounce, modal, toast, campo, leerFormulario, vacio, botonPapelera, conectarPapeleras } from '../ui.js';
 import {
   ESTADOS, usd, bs, tasaTxt, leerMonto, proyectoTxt, formularioColaborador, formularioAsignacion, formularioAbono,
   tablaAsignaciones, tablaAbonos, conectarAsignaciones, badgeEstadoPago,
@@ -189,7 +189,7 @@ async function vistaColaboradores(cont) {
     $('[data-contador]').textContent = `${lista.length} ${lista.length === 1 ? 'colaborador' : 'colaboradores'}`;
     $('[data-tabla]').innerHTML = lista.length
       ? `<div class="table-wrap"><table class="data responsive">
-          <thead><tr><th>Nombre</th><th>Especialidad</th><th>Identificación</th><th>Teléfono</th><th class="right">Proyectos</th><th class="right">Acordado</th><th class="right">Saldo</th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Especialidad</th><th>Identificación</th><th>Teléfono</th><th class="right">Proyectos</th><th class="right">Acordado</th><th class="right">Saldo</th><th></th></tr></thead>
           <tbody>${lista
             .map((c) => {
               const saldo = Math.round((c.acordado_usd - c.abonado_usd) * 100) / 100;
@@ -199,7 +199,8 @@ async function vistaColaboradores(cont) {
                 <td data-label="Teléfono" data-stop>${c.telefono ? `<a href="tel:${esc(c.telefono.replace(/[^\d+]/g, ''))}">${esc(c.telefono)}</a>` : ''}</td>
                 <td data-label="Proyectos" class="right">${c.total_asignaciones}</td>
                 <td data-label="Acordado" class="right">${usd(c.acordado_usd)}</td>
-                <td data-label="Saldo" class="right num ${saldo > 0.004 ? 'texto-saldo' : ''}">${usd(saldo)}</td></tr>`;
+                <td data-label="Saldo" class="right num ${saldo > 0.004 ? 'texto-saldo' : ''}">${usd(saldo)}</td>
+                <td data-label="" class="col-acciones">${botonPapelera(`data-borrar-colaborador="${c.id}"`, 'Eliminar colaborador')}</td></tr>`;
             })
             .join('')}</tbody></table></div>`
       : vacio(f.q ? 'No hay colaboradores que coincidan' : 'Aún no hay colaboradores registrados', 'usuarios');
@@ -210,6 +211,19 @@ async function vistaColaboradores(cont) {
     diferido();
   });
   $('[data-nuevo]').addEventListener('click', () => formularioColaborador(null, { alGuardar: cargar }));
+  conectarPapeleras($('[data-tabla]'), '[data-borrar-colaborador]', {
+    mensaje: (b) => {
+      const c = lista.find((x) => String(x.id) === b.dataset.borrarColaborador);
+      if (c.total_asignaciones) {
+        toast(`${c.nombre} está asignado a ${c.total_asignaciones} ${c.total_asignaciones === 1 ? 'proyecto' : 'proyectos'}. Elimina primero esas asignaciones.`, 'error');
+        return null;
+      }
+      return `¿Eliminar a ${c.nombre} del directorio?`;
+    },
+    eliminar: (b) => api(`/pagos/colaboradores/${b.dataset.borrarColaborador}`, { method: 'DELETE' }),
+    alEliminar: cargar,
+    exito: 'Colaborador eliminado',
+  });
   $('[data-tabla]').addEventListener('click', (e) => {
     if (e.target.closest('[data-stop]')) return;
     const fila = e.target.closest('tr[data-id]');
@@ -242,15 +256,22 @@ async function vistaTasas(cont) {
           vigente.sugerencia ? `<small>Referencia sin fecha valor confirmada: ${esc(vigente.sugerencia.fuente)} · Bs ${tasaTxt(vigente.sugerencia.tasa)}</small>` : ''
         }`;
     $('[data-tabla]').innerHTML = tasas.length
-      ? `<div class="table-wrap"><table class="data responsive"><thead><tr><th>Fecha valor</th><th class="right">Tasa (Bs por USD)</th><th>Origen</th><th>Registrada</th></tr></thead>
+      ? `<div class="table-wrap"><table class="data responsive"><thead><tr><th>Fecha valor</th><th class="right">Tasa (Bs por USD)</th><th>Origen</th><th>Registrada</th><th></th></tr></thead>
           <tbody>${tasas
             .map(
               (t) => `<tr class="sin-clic"><td data-label="Fecha valor">${fecha(t.fecha_valor)}</td><td data-label="Tasa" class="right num">${tasaTxt(t.tasa)}</td>
-                <td data-label="Origen">${t.fuente === 'bcv' ? 'Automática (BCV)' : 'Manual'}</td><td data-label="Registrada">${fechaHora(t.obtenida_en)}</td></tr>`
+                <td data-label="Origen">${t.fuente === 'bcv' ? 'Automática (BCV)' : 'Manual'}</td><td data-label="Registrada">${fechaHora(t.obtenida_en)}</td>
+                <td data-label="" class="col-acciones">${t.fuente === 'bcv' ? '' : botonPapelera(`data-borrar-tasa="${t.fecha_valor}"`, 'Eliminar tasa manual')}</td></tr>`
             )
             .join('')}</tbody></table></div>`
       : vacio('Todavía no hay tasas registradas', 'dinero');
   }
+  conectarPapeleras($('[data-tabla]'), '[data-borrar-tasa]', {
+    mensaje: (b) => `¿Eliminar la tasa manual del ${fecha(b.dataset.borrarTasa)}? Los pagos ya registrados conservan su tasa.`,
+    eliminar: (b) => api(`/pagos/tasas/${b.dataset.borrarTasa}`, { method: 'DELETE' }),
+    alEliminar: cargar,
+    exito: 'Tasa eliminada',
+  });
   $('[data-actualizar]').addEventListener('click', async (e) => {
     e.currentTarget.disabled = true;
     try {

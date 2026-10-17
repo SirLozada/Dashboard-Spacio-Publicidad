@@ -232,9 +232,22 @@ table.data tr.soon td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .file a.thumb img { width: 100%; height: 100%; object-fit: cover; }
 .file a.thumb svg { width: 30px; height: 30px; }
 .file .name { font-size: 12px; padding: 6px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file .del { position: absolute; top: 5px; right: 5px; width: 26px; height: 26px; border-radius: 6px; border: 0; background: rgb(15 23 42 / .65); color: #fff; display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity .15s; }
-.file:hover .del { opacity: 1; }
+.file .del { position: absolute; top: 5px; right: 5px; width: 28px; height: 28px; border-radius: 6px; border: 0; background: rgb(15 23 42 / .7); color: #fff; display: grid; place-items: center; cursor: pointer; }
+.file .del:hover { background: var(--danger); }
 .file .del svg { width: 14px; height: 14px; }
+
+/* ---------- Papelera ---------- */
+.btn-papelera { width: 32px; height: 32px; border-color: transparent; background: transparent; color: var(--text-3); }
+.btn-papelera:hover { color: var(--danger); background: var(--danger-soft); border-color: #fecaca; }
+.btn-papelera svg { width: 17px; height: 17px; }
+td.col-acciones { width: 1%; white-space: nowrap; text-align: right; }
+/* La columna de acciones queda fija a la derecha aunque la tabla se desplace */
+table.data tbody tr { background: var(--surface); }
+table.data td.col-acciones { position: sticky; right: 0; background: inherit; box-shadow: -10px 0 10px -10px rgb(15 23 42 / .25); }
+table.data:has(td.col-acciones) thead th:last-child { position: sticky; right: 0; background: var(--surface-2); }
+td.col-acciones > * { vertical-align: middle; }
+.prov-head { position: relative; padding-right: 34px; }
+.prov-head .btn-papelera { position: absolute; top: -6px; right: -6px; }
 
 /* ---------- Pagos de producción ---------- */
 .tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); overflow-x: auto; }
@@ -297,7 +310,6 @@ table.data tr.anulado td small { text-decoration: none; }
 
 /* ---------- Responsive ---------- */
 @media (min-width: 1280px) { .cards { grid-template-columns: repeat(var(--n, 7), minmax(0, 1fr)); } }
-@media (hover: none) { .file .del { opacity: 1; } }
 
 @media (max-width: 960px) {
   .sidebar { transform: translateX(-100%); box-shadow: var(--shadow-lg); }
@@ -340,4 +352,5 @@ table.data tr.anulado td small { text-decoration: none; }
   table.data.responsive td.hide-sm, table.data.responsive td:empty { display: none; }
   table.data.responsive td > * { text-align: right; }
   table.data.responsive .status-btn { justify-content: flex-end; }
+  table.data.responsive td.col-acciones { justify-content: flex-end; gap: 8px; position: static; box-shadow: none; }
 }

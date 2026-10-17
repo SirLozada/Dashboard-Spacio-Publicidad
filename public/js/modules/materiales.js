@@ -1,6 +1,6 @@
 import { api, qs } from '../api.js';
 import { icon } from '../icons.js';
-import { esc, fecha, dinero, debounce, modal, toast, confirmar, campo, leerFormulario, vacio } from '../ui.js';
+import { esc, fecha, dinero, debounce, modal, toast, confirmar, campo, leerFormulario, vacio, botonPapelera, conectarPapeleras } from '../ui.js';
 
 export async function formularioMaterial(material, { alGuardar } = {}) {
   const nuevo = !material?.id;
@@ -93,7 +93,7 @@ export default {
       $('#contador').textContent = `${lista.length} ${lista.length === 1 ? 'material' : 'materiales'}`;
       $('#tabla').innerHTML = lista.length
         ? `<div class="table-wrap"><table class="data responsive">
-            <thead><tr><th>Material</th><th>Categoría</th><th>Unidad</th><th class="right">Precio aprox.</th><th>Proveedor</th><th>Actualizado</th><th>Observaciones</th></tr></thead>
+            <thead><tr><th>Material</th><th>Categoría</th><th>Unidad</th><th class="right">Precio aprox.</th><th>Proveedor</th><th>Actualizado</th><th>Observaciones</th><th></th></tr></thead>
             <tbody>${lista
               .map(
                 (m) => `<tr data-id="${m.id}">
@@ -104,6 +104,7 @@ export default {
                   <td data-label="Proveedor">${esc(m.proveedor_nombre)}</td>
                   <td data-label="Actualizado" class="nowrap">${fecha(m.fecha_precio)}</td>
                   <td data-label="Observaciones" class="truncate" title="${esc(m.observaciones)}">${esc(m.observaciones)}</td>
+                  <td data-label="" class="col-acciones">${botonPapelera(`data-borrar-material="${m.id}"`, 'Eliminar material')}</td>
                 </tr>`
               )
               .join('')}</tbody></table></div>`
@@ -121,6 +122,12 @@ export default {
       cargar();
     });
     $('#btn-nuevo').addEventListener('click', () => formularioMaterial(null, { alGuardar: recargar }));
+    conectarPapeleras($('#tabla'), '[data-borrar-material]', {
+      mensaje: (b) => `¿Eliminar el material "${lista.find((m) => String(m.id) === b.dataset.borrarMaterial).nombre}"?`,
+      eliminar: (b) => api(`/materiales/${b.dataset.borrarMaterial}`, { method: 'DELETE' }),
+      alEliminar: recargar,
+      exito: 'Material eliminado',
+    });
     $('#tabla').addEventListener('click', (e) => {
       const fila = e.target.closest('tr[data-id]');
       if (fila) formularioMaterial(lista.find((m) => String(m.id) === fila.dataset.id), { alGuardar: recargar });

@@ -5,7 +5,7 @@ import { seccionPagosTrabajo } from './pagos-comun.js';
 import { icon } from '../icons.js';
 import { state, numeroTrabajo, esAdmin, alternarEstatus, listaEstatus } from '../state.js';
 import {
-  esc, fecha, fechaHora, campo, modal, toast, confirmar, botonEstatus, selectorEstatus, badgeEstatus,
+  esc, fecha, fechaHora, campo, modal, toast, confirmar, botonPapelera, conectarPapeleras, botonEstatus, selectorEstatus, badgeEstatus,
   situacion, etiquetaVencimiento, tamanoArchivo, debounce, vacio,
 } from '../ui.js';
 
@@ -30,6 +30,7 @@ export function tablaTrabajos(lista, { compacta = false } = {}) {
         <td data-label="Entrega" class="nowrap"><span>${fecha(t.fecha_entrega) || '<span class="muted">—</span>'}${etiquetaVencimiento(t)}</span></td>
         <td data-label="Responsable">${esc(t.responsable)}</td>
         ${compacta ? '' : `<td data-label="" class="nowrap">${t.total_adjuntos ? `<span class="clip" title="Archivos adjuntos">${icon('clip')}${t.total_adjuntos}</span>` : ''}</td>`}
+        ${esAdmin() ? `<td data-label="" class="col-acciones">${botonPapelera(`data-borrar-trabajo="${t.id}"`, 'Eliminar trabajo')}</td>` : ''}
       </tr>`;
     })
     .join('');
@@ -40,7 +41,7 @@ export function tablaTrabajos(lista, { compacta = false } = {}) {
       <th>Descripción</th><th>Estatus</th><th>Pendiente</th>
       ${compacta ? '' : '<th>Inicio</th><th>Entrega cot.</th>'}
       <th class="sortable" data-sort="entrega">Entrega</th><th>Responsable</th>
-      ${compacta ? '' : '<th></th>'}
+      ${compacta ? '' : '<th></th>'}${esAdmin() ? '<th></th>' : ''}
     </tr></thead>
     <tbody>${filas}</tbody></table></div>`;
 }
@@ -114,6 +115,15 @@ function abrirSelectorTabla(boton, trabajo, alCerrar) {
 
 // Conecta los eventos de la tabla: abrir ficha al hacer clic y cambio rápido de estatus.
 export function conectarTabla(contenedor, { alCambiar, obtenerTrabajo }) {
+  conectarPapeleras(contenedor, '[data-borrar-trabajo]', {
+    mensaje: (b) => {
+      const t = obtenerTrabajo(Number(b.dataset.borrarTrabajo));
+      return `¿Eliminar el trabajo ${numeroTrabajo(t.numero)} · ${t.cliente} y sus archivos? Esta acción no se puede deshacer.`;
+    },
+    eliminar: (b) => api(`/trabajos/${b.dataset.borrarTrabajo}`, { method: 'DELETE' }),
+    alEliminar: alCambiar,
+    exito: 'Trabajo eliminado',
+  });
   contenedor.addEventListener('click', (e) => {
     const boton = e.target.closest('[data-estatus-de]');
     if (boton) {
@@ -344,7 +354,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
           .map(
             (p, i) => `<li class="${p.hecho ? 'done' : ''}">
               <label><input type="checkbox" data-hecho="${p.id ?? i}" ${p.hecho ? 'checked' : ''} ${nuevo ? 'disabled' : ''}><span>${esc(p.texto)}</span></label>
-              <button class="icon-btn" type="button" data-del-pend="${p.id ?? i}" aria-label="Quitar pendiente">${icon('x')}</button>
+              <button class="icon-btn btn-papelera" type="button" data-del-pend="${p.id ?? i}" title="Eliminar pendiente" aria-label="Eliminar pendiente">${icon('trash')}</button>
             </li>`
           )
           .join('')

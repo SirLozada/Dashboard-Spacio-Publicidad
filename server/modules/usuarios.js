@@ -61,4 +61,34 @@ router.patch('/:id', async (req, res) => {
   res.json(usuarioPublico(await obtener(u.id)));
 });
 
+// Eliminar un usuario. No se puede eliminar a uno mismo ni al último
+// administrador. Si registró pagos de producción se conserva para el historial
+// (en ese caso se puede desactivar).
+router.delete('/:id', async (req, res) => {
+  const u = await obtener(req.params.id);
+  if (!u) throw new HttpError(404, 'Usuario no encontrado');
+  if (u.id === req.usuario.id) throw new HttpError(400, 'No puedes eliminar tu propio usuario');
+  if (u.rol === 'admin' && u.activo && (await totalAdminsActivos()) <= 1) {
+    throw new HttpError(400, 'Debe existir al menos un administrador activo');
+  }
+  const conPagos = await db.value(
+    `SELECT 1 FROM abonos WHERE creado_por = ? UNION SELECT 1 FROM asignaciones WHERE creado_por = ?
+     UNION SELECT 1 FROM pagos_historial WHERE usuario_id = ? LIMIT 1`,
+    u.id,
+    u.id,
+    u.id
+  );
+  if (conPagos) {
+    throw new HttpError(400, 'Este usuario registró pagos de producción y se conserva en el historial. Puedes desactivarlo para que no ingrese.');
+  }
+  await db.transaction(async (tx) => {
+    await tx.run('UPDATE trabajos SET creado_por = NULL WHERE creado_por = ?', u.id);
+    await tx.run('UPDATE trabajos SET actualizado_por = NULL WHERE actualizado_por = ?', u.id);
+    await tx.run('UPDATE adjuntos SET subido_por = NULL WHERE subido_por = ?', u.id);
+    await tx.run('UPDATE tasas_bcv SET registrada_por = NULL WHERE registrada_por = ?', u.id);
+    await tx.run('DELETE FROM usuarios WHERE id = ?', u.id);
+  });
+  res.json({ ok: true });
+});
+
 module.exports = { router };

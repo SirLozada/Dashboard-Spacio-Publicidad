@@ -3,7 +3,7 @@
 import { api, qs } from '../api.js';
 import { icon } from '../icons.js';
 import { numeroTrabajo, esAprobado, filtroAprobados } from '../state.js';
-import { esc, fecha, fechaHora, hoyIso, modal, toast, confirmar, campo, leerFormulario, vacio } from '../ui.js';
+import { esc, fecha, fechaHora, hoyIso, modal, toast, confirmar, campo, leerFormulario, vacio, botonPapelera, conectarPapeleras } from '../ui.js';
 
 export const METODOS = ['Pago móvil', 'Transferencia en Bs', 'Efectivo USD', 'Efectivo Bs', 'Zelle', 'Binance / USDT', 'Otro'];
 export const ESTADOS = {
@@ -113,7 +113,7 @@ export async function formularioAsignacion({ asignacion = null, trabajoId = null
       ${campo({ name: 'monto_acordado_usd', label: 'Monto total acordado (USD)', required: true, placeholder: '0,00' }, asignacion ? f2.format(asignacion.monto_acordado_usd) : '')}
       ${campo({ name: 'observaciones', label: 'Observaciones', type: 'textarea', full: true }, asignacion?.observaciones)}
     </form>`,
-    foot: `${!nuevo && asignacion.total_movimientos === 0 ? `<button class="btn btn-danger left" type="button" data-borrar>${icon('trash')}Eliminar</button>` : '<span class="left"></span>'}
+    foot: `${!nuevo && Math.abs(asignacion.abonado_usd) <= 0.004 ? `<button class="btn btn-danger left" type="button" data-borrar>${icon('trash')}Eliminar</button>` : '<span class="left"></span>'}
       <button class="btn" data-close type="button">Cancelar</button>
       <button class="btn btn-primary" type="submit" form="form-asignacion">${nuevo ? 'Asignar' : 'Guardar cambios'}</button>`,
   });
@@ -149,7 +149,7 @@ export async function formularioAsignacion({ asignacion = null, trabajoId = null
     }
   });
   m.el.querySelector('[data-borrar]')?.addEventListener('click', async () => {
-    if (!(await confirmar('¿Eliminar esta asignación? (no tiene pagos registrados)'))) return;
+    if (!(await confirmar('¿Eliminar esta asignación?'))) return;
     try {
       await api(`/pagos/asignaciones/${asignacion.id}`, { method: 'DELETE' });
       toast('Asignación eliminada');
@@ -380,7 +380,7 @@ export function tablaAbonos(abonos, { conProyecto = false, conColaborador = true
           }${b.anulado_por ? '<br><small class="texto-error">Anulado</small>' : ''}</td>
           ${
             acciones
-              ? `<td data-label="">${b.tipo === 'abono' && !b.anulado_por ? `<button class="btn btn-sm btn-ghost" type="button" data-anular="${b.id}">Anular</button>` : ''}</td>`
+              ? `<td data-label="" class="col-acciones">${b.tipo === 'abono' && !b.anulado_por ? botonPapelera(`data-anular="${b.id}"`, 'Anular pago (queda en el historial)') : ''}</td>`
               : ''
           }
         </tr>`;
@@ -479,7 +479,8 @@ export function tablaAsignaciones(lista, { conProyecto = true, conColaborador = 
         <td data-label="Abonado" class="right">${usd(a.abonado_usd)}</td>
         <td data-label="Saldo" class="right num ${a.saldo_usd > 0.004 ? 'texto-saldo' : ''}">${usd(a.saldo_usd)}</td>
         <td data-label="Estado">${badgeEstadoPago(a.estado)}</td>
-        <td data-label="" data-stop>${a.saldo_usd > 0.004 ? `<button class="btn btn-sm" type="button" data-abonar="${a.id}">${icon('plus')}Abono</button>` : ''}</td>
+        <td data-label="" data-stop class="col-acciones">${a.saldo_usd > 0.004 ? `<button class="btn btn-sm" type="button" data-abonar="${a.id}">${icon('plus')}Abono</button>` : ''}
+          ${botonPapelera(`data-borrar-asignacion="${a.id}"`, 'Eliminar asignación')}</td>
       </tr>`
       )
       .join('')}</tbody></table></div>`;
@@ -487,6 +488,19 @@ export function tablaAsignaciones(lista, { conProyecto = true, conColaborador = 
 
 // Eventos de una tabla de asignaciones: ver detalle o registrar abono.
 export function conectarAsignaciones(contenedor, { obtener, alCambiar }) {
+  conectarPapeleras(contenedor, '[data-borrar-asignacion]', {
+    mensaje: (b) => {
+      const a = obtener(Number(b.dataset.borrarAsignacion));
+      if (Math.abs(a.abonado_usd) > 0.004) {
+        toast(`${a.colaborador} tiene ${usd(a.abonado_usd)} abonados en este proyecto. Anula esos pagos (papelera en su detalle) antes de eliminar la asignación.`, 'error');
+        return null;
+      }
+      return `¿Eliminar la asignación de ${a.colaborador} en ${a.proyecto}?`;
+    },
+    eliminar: (b) => api(`/pagos/asignaciones/${b.dataset.borrarAsignacion}`, { method: 'DELETE' }),
+    alEliminar: alCambiar,
+    exito: 'Asignación eliminada',
+  });
   contenedor.addEventListener('click', (e) => {
     const abonar = e.target.closest('[data-abonar]');
     if (abonar) {

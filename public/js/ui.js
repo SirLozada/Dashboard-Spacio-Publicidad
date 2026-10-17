@@ -205,3 +205,33 @@ export function leerFormulario(form) {
 export function vacio(texto, ico = 'inbox') {
   return `<div class="empty">${icon(ico)}<div>${esc(texto)}</div></div>`;
 }
+
+// ---------- Papelera (eliminar desde las listas) ----------
+
+export function botonPapelera(atributos, titulo = 'Eliminar') {
+  return `<button type="button" class="icon-btn btn-papelera" ${atributos} title="${esc(titulo)}" aria-label="${esc(titulo)}">${icon('trash')}</button>`;
+}
+
+// Conecta las papeleras de un contenedor: pide confirmación, elimina y recarga.
+// Se atiende en fase de captura para que el clic no abra además la ficha de la fila.
+export function conectarPapeleras(contenedor, selector, { mensaje, eliminar, alEliminar, exito = 'Eliminado' }) {
+  contenedor.addEventListener(
+    'click',
+    async (e) => {
+      const boton = e.target.closest(selector);
+      if (!boton || !contenedor.contains(boton)) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const texto = mensaje(boton);
+      if (texto === null || !(await confirmar(texto))) return;
+      try {
+        await eliminar(boton);
+        toast(exito);
+        alEliminar?.();
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    },
+    true
+  );
+}

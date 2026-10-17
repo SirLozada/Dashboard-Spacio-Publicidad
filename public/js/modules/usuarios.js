@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import { icon } from '../icons.js';
 import { state } from '../state.js';
-import { esc, fechaHora, modal, toast, campo, leerFormulario } from '../ui.js';
+import { esc, fechaHora, modal, toast, campo, leerFormulario, botonPapelera, conectarPapeleras } from '../ui.js';
 
 const ROLES = [
   { value: 'usuario', label: 'Usuario (puede registrar y editar)' },
@@ -59,7 +59,7 @@ export default {
     async function cargar() {
       lista = await api('/usuarios');
       $('#tabla').innerHTML = `<div class="table-wrap"><table class="data responsive">
-        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th>Creado</th></tr></thead>
+        <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th>Creado</th><th></th></tr></thead>
         <tbody>${lista
           .map(
             (u) => `<tr data-id="${u.id}">
@@ -68,11 +68,18 @@ export default {
               <td data-label="Rol">${u.rol === 'admin' ? 'Administrador' : 'Usuario'}</td>
               <td data-label="Estado">${u.activo ? '<span class="badge" style="--c:#16a34a">Activo</span>' : '<span class="badge" style="--c:#78716c">Desactivado</span>'}</td>
               <td data-label="Creado" class="nowrap">${fechaHora(u.creado_en)}</td>
+              <td data-label="" class="col-acciones">${u.id === state.usuario.id ? '' : botonPapelera(`data-borrar-usuario="${u.id}"`, 'Eliminar usuario')}</td>
             </tr>`
           )
           .join('')}</tbody></table></div>`;
     }
     $('#btn-nuevo').addEventListener('click', () => formularioUsuario(null, { alGuardar: cargar }));
+    conectarPapeleras($('#tabla'), '[data-borrar-usuario]', {
+      mensaje: (b) => `¿Eliminar el usuario "${lista.find((u) => String(u.id) === b.dataset.borrarUsuario).nombre}"? Ya no podrá ingresar.`,
+      eliminar: (b) => api(`/usuarios/${b.dataset.borrarUsuario}`, { method: 'DELETE' }),
+      alEliminar: cargar,
+      exito: 'Usuario eliminado',
+    });
     $('#tabla').addEventListener('click', (e) => {
       const fila = e.target.closest('tr[data-id]');
       if (fila) formularioUsuario(lista.find((u) => String(u.id) === fila.dataset.id), { alGuardar: cargar });
