@@ -66,7 +66,12 @@ Variables a definir en **Settings → Environment Variables**:
 - `ZONA_HORARIA` (opcional, por defecto `America/Caracas`): zona horaria para calcular los atrasos.
 - `BLOB_ACCESS=private` sólo si el almacén Blob se creó como privado.
 
-Después de conectar Turso y Blob, hacer **Redeploy**. En la primera visita se
+Después de conectar Turso y Blob, hacer **Redeploy** (o subir cualquier cambio a
+la rama: Vercel publica de nuevo automáticamente). Las variables nuevas sólo se
+aplican a los despliegues creados después de conectarlas.
+
+Para comprobar el estado abrir `/api/salud`: responde `{"ok":true}` cuando la
+base de datos está lista, o un mensaje que indica qué falta. En la primera visita se
 crean las tablas, el usuario `fernando` y se importan los Excel de `datos-iniciales/`.
 
 `vercel.json` ya define todo lo necesario: la carpeta `public/` se sirve como
