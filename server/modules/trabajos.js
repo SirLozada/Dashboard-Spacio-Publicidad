@@ -261,6 +261,9 @@ router.delete('/:id', requiereAdmin, async (req, res) => {
   if (await db.value('SELECT 1 FROM asignaciones WHERE trabajo_id = ? LIMIT 1', id)) {
     throw new HttpError(400, 'No se puede eliminar: el trabajo tiene pagos de producción registrados');
   }
+  if (await db.value('SELECT 1 FROM cotizaciones WHERE trabajo_id = ? LIMIT 1', id)) {
+    throw new HttpError(400, 'No se puede eliminar: el trabajo tiene cotizaciones. Elimínalas primero.');
+  }
   if (await db.value('SELECT 1 FROM solicitudes WHERE trabajo_id = ? LIMIT 1', id)) {
     throw new HttpError(400, 'No se puede eliminar: el trabajo tiene solicitudes y novedades registradas (se conservan como historial)');
   }

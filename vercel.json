@@ -7,7 +7,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "{server/migrations/**,datos-iniciales/**}"
+      "includeFiles": "{server/migrations/**,datos-iniciales/**,public/js/lib/**,public/img/logo-oscuro.png}"
     }
   },
   "rewrites": [

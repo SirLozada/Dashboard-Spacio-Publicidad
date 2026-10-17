@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import { seccionPagosTrabajo } from './pagos-comun.js';
 import { subirArchivos } from './adjuntos.js';
 import { seccionSolicitudesTrabajo } from './solicitudes-comun.js';
+import { seccionCotizacionesTrabajo } from './cotizaciones-comun.js';
 import { icon } from '../icons.js';
 import { state, numeroTrabajo, esAdmin, alternarEstatus, listaEstatus } from '../state.js';
 import {
@@ -212,7 +213,8 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
         : `<nav class="tabs ficha-tabs" role="tablist">
             <button type="button" class="activo" data-ficha-tab="datos">${icon('trabajos')}Datos del trabajo</button>
             <button type="button" data-ficha-tab="solicitudes">${icon('mensaje')}Solicitudes y novedades <span class="tab-contador" hidden></span></button>
-          </nav><div data-ficha-panel="solicitudes" hidden></div>`
+            ${esAdmin() ? `<button type="button" data-ficha-tab="cotizacion">${icon('tag')}Cotización</button>` : ''}
+          </nav><div data-ficha-panel="solicitudes" hidden></div>${esAdmin() ? '<div data-ficha-panel="cotizacion" hidden></div>' : ''}`
     }<div data-ficha-panel="datos"><form class="form-grid" novalidate>
         ${camposFicha(sug).map((c) => campo(c, trabajo[c.name])).join('')}
       </form>
@@ -261,10 +263,18 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     }).catch((err) => {
       panelSolicitudes.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
     });
+    const panelCotizacion = m.el.querySelector('[data-ficha-panel=cotizacion]');
+    let cotizacionCargada = false;
     m.el.querySelectorAll('[data-ficha-tab]').forEach((b) =>
       b.addEventListener('click', () => {
         m.el.querySelectorAll('[data-ficha-tab]').forEach((x) => x.classList.toggle('activo', x === b));
         m.el.querySelectorAll('[data-ficha-panel]').forEach((p) => (p.hidden = p.dataset.fichaPanel !== b.dataset.fichaTab));
+        if (b.dataset.fichaTab === 'cotizacion' && panelCotizacion && !cotizacionCargada) {
+          cotizacionCargada = true;
+          seccionCotizacionesTrabajo(panelCotizacion, trabajo).catch((err) => {
+            panelCotizacion.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
+          });
+        }
       })
     );
   }

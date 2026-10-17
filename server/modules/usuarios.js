@@ -91,6 +91,7 @@ router.delete('/:id', async (req, res) => {
     await tx.run('UPDATE trabajos SET actualizado_por = NULL WHERE actualizado_por = ?', u.id);
     await tx.run('UPDATE adjuntos SET subido_por = NULL WHERE subido_por = ?', u.id);
     await tx.run('UPDATE tasas_bcv SET registrada_por = NULL WHERE registrada_por = ?', u.id);
+    await tx.run('UPDATE cotizaciones SET creado_por = NULL WHERE creado_por = ?', u.id);
     await tx.run('UPDATE solicitud_adjuntos SET subido_por = NULL WHERE subido_por = ?', u.id);
     await tx.run('DELETE FROM solicitud_destinatarios WHERE usuario_id = ?', u.id);
     await tx.run('DELETE FROM notificaciones WHERE usuario_id = ?', u.id);

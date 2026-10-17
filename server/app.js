@@ -10,6 +10,7 @@ const proveedores = require('./modules/proveedores');
 const usuarios = require('./modules/usuarios');
 const pagos = require('./modules/pagos');
 const solicitudes = require('./modules/solicitudes');
+const cotizaciones = require('./modules/cotizaciones');
 const almacen = require('./lib/almacen');
 const { importacionInicial } = require('./importar');
 
@@ -115,6 +116,7 @@ const MODULOS = [
   { ruta: '/api/proveedores', router: proveedores.router },
   { ruta: '/api/usuarios', router: usuarios.router, soloAdmin: true },
   { ruta: '/api/pagos', router: pagos.router, soloAdmin: true },
+  { ruta: '/api/cotizaciones', router: cotizaciones.router, soloAdmin: true },
   { ruta: '/api/solicitudes', router: solicitudes.router },
   { ruta: '/api/notificaciones', router: solicitudes.notificaciones },
 ];

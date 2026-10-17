@@ -390,6 +390,40 @@ table.data tr.cerrada td { color: var(--text-2); }
 .ultimas li:hover { background: var(--primary-soft); }
 .cargando { padding: 30px; text-align: center; color: var(--text-2); }
 
+/* ---------- Cotizaciones ---------- */
+.modal.modal-editor { max-width: 1180px; }
+.cot-editor { display: grid; gap: 18px; }
+.cot-seccion { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; background: var(--surface); }
+.cot-seccion h3 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-2); }
+.cot-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cot-parametros { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px 16px; align-items: end; }
+.cot-comision { grid-column: span 1; }
+.cot-pieza { border: 1px solid var(--border); border-left: 4px solid var(--spacio-azul); border-radius: var(--radius); padding: 12px; margin-bottom: 12px; background: var(--surface-2); }
+.cot-pieza-cab { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+.cot-pieza-cab .field { min-width: 120px; }
+.cot-pieza-acciones { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+.cot-tabla td { padding: 4px 6px; }
+.cot-tabla .input { min-height: 34px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--surface); }
+.cot-tabla .num-input, .num-input { text-align: right; }
+.cot-lineas td:nth-child(1) { min-width: 170px; }
+.cot-lineas td:nth-child(2), .cot-lineas td:nth-child(3) { min-width: 120px; }
+.cot-lineas td:nth-child(4) { width: 90px; }
+.cot-lineas td:nth-child(5) { width: 120px; }
+.cot-lineas td:nth-child(6) { width: 110px; }
+.cot-pieza-pie { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.cot-calculo { display: flex; gap: 6px 14px; flex-wrap: wrap; justify-content: flex-end; font-size: 13.5px; color: var(--text-2); }
+.cot-calculo b { color: var(--text); font-variant-numeric: tabular-nums; }
+.cot-calculo .precio b { color: var(--primary); }
+.cot-tabla tfoot td { font-weight: 800; border-top: 2px solid var(--text); padding: 8px 6px; }
+.cot-desglose { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+.cot-desglose > div { background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; display: grid; }
+.cot-desglose small { font-size: 12px; color: var(--text-2); font-weight: 600; }
+.cot-desglose strong { font-variant-numeric: tabular-nums; }
+.cot-desglose .total { background: var(--sidebar); color: #fff; }
+.cot-desglose .total small { color: #c7c9ce; }
+.aviso-cot { color: var(--warning); background: var(--warning-soft); border-radius: var(--radius-sm); padding: 8px 10px; display: flex; gap: 6px; align-items: center; margin: 10px 0 0; font-size: 13.5px; }
+.aviso-cot svg { width: 16px; height: 16px; }
+
 /* ---------- Toasts ---------- */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 80; display: grid; gap: 8px; }
 .toast { background: var(--sidebar); color: #fff; padding: 11px 16px; border-radius: 9px; box-shadow: var(--shadow-lg); font-size: 14px; max-width: 360px; animation: pop .2s ease; }
@@ -411,7 +445,8 @@ table.data tr.cerrada td { color: var(--text-2); }
 @media (max-width: 720px) {
   .form-grid { grid-template-columns: 1fr; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .kpis-3, .saldo-box, .sol-meta, .sol-controles { grid-template-columns: 1fr; }
+  .kpis-3, .saldo-box, .sol-meta, .sol-controles, .cot-grid-4 { grid-template-columns: 1fr; }
+  .cot-pieza-acciones { margin-left: 0; }
   .hilo-msj { max-width: 100%; }
   .campana-panel { position: fixed; top: 60px; right: 12px; }
   .kpi strong { font-size: 19px; }
