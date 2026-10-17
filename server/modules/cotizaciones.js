@@ -434,18 +434,51 @@ const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', 
 const dinero = (v) => `$${new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)}`;
 const fechaTxt = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 
+// Guarda los textos editados directamente sobre el documento del cliente.
+// Las piezas se identifican por su posición (el editor las reescribe al guardar).
+router.patch('/:id/textos-cliente', async (req, res) => {
+  const c = await db.get('SELECT id FROM cotizaciones WHERE id = ?', req.params.id);
+  if (!c) throw new HttpError(404, 'Cotización no encontrada');
+  const b = req.body || {};
+  const piezas = await db.column('SELECT id FROM cotizacion_piezas WHERE cotizacion_id = ? ORDER BY orden, id', c.id);
+  await db.transaction(async (tx) => {
+    for (const [i, p] of (Array.isArray(b.piezas) ? b.piezas : []).entries()) {
+      if (!piezas[i]) break;
+      const nombre = t(p.nombre, 200);
+      await tx.run(
+        'UPDATE cotizacion_piezas SET nombre = COALESCE(?, nombre), descripcion_cliente = CASE WHEN ? THEN ? ELSE descripcion_cliente END WHERE id = ?',
+        nombre,
+        'descripcion_cliente' in p ? 1 : 0,
+        t(p.descripcion_cliente, 3000),
+        piezas[i]
+      );
+    }
+    for (const campo of ['tiempo_entrega', 'condiciones']) {
+      if (campo in b) await tx.run(`UPDATE cotizaciones SET ${campo} = ? WHERE id = ?`, t(b[campo], campo === 'condiciones' ? 2000 : 300), c.id);
+    }
+    await tx.run("UPDATE cotizaciones SET actualizado_en = datetime('now') WHERE id = ?", c.id);
+  });
+  res.json({ ok: true });
+});
+
 router.get('/:id/cliente', async (req, res) => {
   const c = await cargar(req.params.id);
   if (!c) throw new HttpError(404, 'Cotización no encontrada');
   const k = c.calculo;
+  // Los textos marcados con data-editable se pueden corregir haciendo clic sobre ellos.
+  const editable = (campo, valor, placeholder, etiqueta = 'div', clase = '') =>
+    `<${etiqueta} class="editable ${clase} ${valor ? '' : 'vacio'}" data-campo="${campo}" contenteditable="plaintext-only" data-placeholder="${esc(placeholder)}" spellcheck="true">${esc(valor || '')}</${etiqueta}>`;
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'");
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'"
+  );
   res.send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(c.codigo)} · ${esc(c.cliente)}</title>
 <style>
   :root { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; }
   body { margin: 0; background: #f4f6fa; }
-  .hoja { max-width: 820px; margin: 24px auto; background: #fff; padding: 40px 44px; box-shadow: 0 10px 30px -12px rgb(15 23 42 / .3); position: relative; }
+  .hoja { max-width: 820px; margin: 16px auto 24px; background: #fff; padding: 40px 44px; box-shadow: 0 10px 30px -12px rgb(15 23 42 / .3); position: relative; }
   .hoja::before { content: ""; position: absolute; inset: 0 0 auto; height: 6px; background: linear-gradient(90deg, #fcc127 0 33.3%, #e02d8b 33.3% 66.6%, #2197d4 66.6%); }
   header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 28px; }
   header img { width: 210px; }
@@ -455,17 +488,33 @@ router.get('/:id/cliente', async (req, res) => {
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; background: #0a0a0b; color: #fff; padding: 9px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
   td { padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-  td .desc { margin-top: 4px; color: #475569; font-size: 13px; line-height: 1.5; white-space: pre-line; }
+  .nombre { font-weight: 700; }
+  .desc { margin-top: 4px; color: #475569; font-size: 13px; line-height: 1.5; white-space: pre-line; }
   .r { text-align: right; white-space: nowrap; }
   tfoot td { font-weight: 800; font-size: 16px; border-bottom: 0; border-top: 2px solid #0a0a0b; }
-  .notas { margin-top: 24px; font-size: 13.5px; color: #334155; display: grid; gap: 6px; white-space: pre-line; }
+  .notas { margin-top: 24px; font-size: 13.5px; color: #334155; display: grid; gap: 6px; }
+  .nota { display: flex; gap: 6px; flex-wrap: wrap; } .nota > b { flex: none; }
+  .nota .editable { flex: 1; min-width: 200px; white-space: pre-line; }
   footer { margin-top: 30px; font-size: 12px; color: #64748b; text-align: center; }
-  .acciones { max-width: 820px; margin: 16px auto 0; display: flex; justify-content: flex-end; gap: 8px; }
+  /* Edición sobre el documento */
+  .editable { outline: none; border-radius: 4px; transition: background .15s, box-shadow .15s; cursor: text; }
+  .editable:hover { background: #f0f7fc; box-shadow: 0 0 0 3px #f0f7fc; }
+  .editable:focus { background: #fff; box-shadow: 0 0 0 2px #1679b5; }
+  .editable.vacio:empty::before { content: attr(data-placeholder); color: #94a3b8; font-style: italic; }
+  .acciones { max-width: 820px; margin: 16px auto 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 4px; }
+  .acciones .ayuda { font-size: 13.5px; color: #475569; }
+  .acciones .estado { font-size: 13px; color: #16a34a; margin-right: 6px; } .acciones .estado.pendiente { color: #b45309; } .acciones .estado.error { color: #dc2626; }
   .acciones button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 7px; border: 1px solid #1679b5; background: #1679b5; color: #fff; cursor: pointer; }
-  @media print { body { background: #fff; } .hoja { box-shadow: none; margin: 0; max-width: none; } .acciones { display: none; } }
+  @media print {
+    body { background: #fff; } .hoja { box-shadow: none; margin: 0; max-width: none; } .acciones { display: none; }
+    .editable { background: none !important; box-shadow: none !important; } .editable:empty, .nota.sin-texto { display: none; }
+  }
   @media (max-width: 640px) { .hoja { padding: 28px 18px; } .datos { grid-template-columns: 1fr; } header { flex-direction: column; } .num { text-align: left; } }
 </style></head><body>
-<div class="acciones"><button onclick="window.print()">Imprimir / Guardar como PDF</button></div>
+<div class="acciones">
+  <span class="ayuda">✏️ Haz clic sobre los nombres y descripciones para corregirlos. Se guardan en la cotización.</span>
+  <span><span class="estado" id="estado"></span><button type="button" id="imprimir">Imprimir / Guardar como PDF</button></span>
+</div>
 <div class="hoja">
   <header><img src="/img/logo-oscuro.png" alt="Spacio Publicidad C.A.">
     <div class="num"><h1>COTIZACIÓN</h1><div>${esc(c.codigo)}</div><div>Fecha: ${esc(fechaTxt(c.fecha))}</div></div></header>
@@ -479,20 +528,76 @@ router.get('/:id/cliente', async (req, res) => {
   <table>
     <thead><tr><th>Descripción</th><th class="r">Cantidad</th><th class="r">Precio unitario</th><th class="r">Total</th></tr></thead>
     <tbody>${k.piezas
-      .map((p, i) => `<tr><td><strong>${esc(p.nombre)}</strong>${
-        c.piezas[i].descripcion_cliente ? `<div class="desc">${esc(c.piezas[i].descripcion_cliente)}</div>` : ''
-      }</td><td class="r">${esc(p.cantidad)}</td><td class="r">${dinero(p.precio_unitario_cliente)}</td><td class="r">${dinero(p.total)}</td></tr>`)
+      .map(
+        (p, i) => `<tr data-pieza="${i}"><td>${editable('nombre', p.nombre, 'Nombre de la pieza', 'div', 'nombre')}${editable(
+          'descripcion_cliente',
+          c.piezas[i].descripcion_cliente,
+          'Agregar descripción de lo que incluye este monto…',
+          'div',
+          'desc'
+        )}</td><td class="r">${esc(p.cantidad)}</td><td class="r">${dinero(p.precio_unitario_cliente)}</td><td class="r">${dinero(p.total)}</td></tr>`
+      )
       .join('')}</tbody>
     <tfoot><tr><td colspan="3">TOTAL</td><td class="r">${dinero(k.total)}</td></tr></tfoot>
   </table>
   <div class="notas">
     <div>Montos expresados en dólares estadounidenses (USD).</div>
-    ${c.tiempo_entrega ? `<div><b>Tiempo de entrega:</b> ${esc(c.tiempo_entrega)}</div>` : ''}
+    <div class="nota ${c.tiempo_entrega ? '' : 'sin-texto'}"><b>Tiempo de entrega:</b> ${editable('tiempo_entrega', c.tiempo_entrega, 'Ej. 15 días hábiles tras la aprobación', 'span')}</div>
     ${c.validez_dias ? `<div><b>Validez de la oferta:</b> ${esc(c.validez_dias)} días</div>` : ''}
-    ${c.condiciones ? `<div><b>Condiciones:</b>\n${esc(c.condiciones)}</div>` : ''}
+    <div class="nota ${c.condiciones ? '' : 'sin-texto'}"><b>Condiciones:</b> ${editable('condiciones', c.condiciones, 'Ej. 60 % de anticipo y 40 % contra entrega', 'span')}</div>
   </div>
   <footer>Spacio Publicidad C.A.</footer>
-</div></body></html>`);
+</div>
+<script>
+(() => {
+  const estado = document.getElementById('estado');
+  let pendiente = false;
+  let guardando = Promise.resolve();
+  const texto = (el) => (el ? el.innerText.replace(/ /g, ' ').trim() : '');
+  const pintar = (clase, msg) => { estado.className = 'estado ' + clase; estado.textContent = msg; };
+  function guardar() {
+    if (!pendiente) return guardando;
+    pendiente = false;
+    pintar('pendiente', 'Guardando…');
+    const cuerpo = {
+      piezas: [...document.querySelectorAll('[data-pieza]')].map((tr) => ({
+        nombre: texto(tr.querySelector('[data-campo=nombre]')),
+        descripcion_cliente: texto(tr.querySelector('[data-campo=descripcion_cliente]')),
+      })),
+      tiempo_entrega: texto(document.querySelector('[data-campo=tiempo_entrega]')),
+      condiciones: texto(document.querySelector('[data-campo=condiciones]')),
+    };
+    guardando = guardando
+      .then(() => fetch(location.pathname.replace(/\\/cliente$/, '/textos-cliente'), {
+        method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo),
+      }))
+      .then((r) => { if (!r.ok) throw new Error(); pintar('', '✓ Cambios guardados'); })
+      .catch(() => { pendiente = true; pintar('error', 'No se pudo guardar. Revisa tu sesión e inténtalo de nuevo.'); });
+    return guardando;
+  }
+  let temporizador;
+  document.querySelectorAll('[data-campo]').forEach((el) => {
+    el.addEventListener('input', () => {
+      pendiente = true;
+      el.classList.toggle('vacio', !texto(el));
+      el.closest('.nota')?.classList.toggle('sin-texto', !texto(el));
+      pintar('pendiente', 'Cambios sin guardar…');
+      clearTimeout(temporizador);
+      temporizador = setTimeout(guardar, 1200);
+    });
+    el.addEventListener('blur', guardar);
+    // Enter en el nombre no crea una línea nueva
+    if (el.dataset.campo === 'nombre') el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+  });
+  document.getElementById('imprimir').addEventListener('click', async () => {
+    clearTimeout(temporizador);
+    document.activeElement?.blur();
+    await guardar();
+    window.print();
+  });
+  window.addEventListener('beforeunload', (e) => { if (pendiente) { guardar(); e.preventDefault(); } });
+})();
+</script></body></html>`);
 });
 
 module.exports = { router };

@@ -126,3 +126,28 @@ test('unir en una sola cotización las piezas aprobadas de varias cotizaciones',
   await pedir(`/cotizaciones/${u.datos.id}`, { method: 'DELETE' });
   assert.strictEqual((await pedir(`/cotizaciones/${a.id}`)).datos.unificada_en, null);
 });
+
+test('los textos del documento del cliente se corrigen sobre el mismo documento', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'CLIENTE TEXTOS', descripcion: 'Prueba' } });
+  const nueva = await pedir('/cotizaciones', { method: 'POST', body: { trabajo_id: t.datos.id } });
+  await pedir(`/cotizaciones/${nueva.datos.id}`, {
+    method: 'PUT',
+    body: { ...nueva.datos, piezas: [{ nombre: 'Pieza 1', cantidad: 1, lineas: L([['MDF', 1, 10]]) }, { nombre: 'Pieza 2', cantidad: 1, lineas: [] }] },
+  });
+  const doc = await pedir(`/cotizaciones/${nueva.datos.id}/cliente`);
+  assert.match(doc.datos, /contenteditable/);
+  // El script del documento debe ser JavaScript válido
+  const script = doc.datos.match(/<script>([\s\S]*)<\/script>/)[1];
+  assert.doesNotThrow(() => new Function(script));
+  assert.ok(script.includes("replace(/\\/cliente$/"));
+  const r = await pedir(`/cotizaciones/${nueva.datos.id}/textos-cliente`, {
+    method: 'PATCH',
+    body: { piezas: [{ nombre: 'Puntera', descripcion_cliente: 'Fabricación en MDF' }, { nombre: '' }], condiciones: '60 % de anticipo' },
+  });
+  assert.strictEqual(r.status, 200);
+  const c = await pedir(`/cotizaciones/${nueva.datos.id}`);
+  assert.strictEqual(c.datos.piezas[0].nombre, 'Puntera');
+  assert.strictEqual(c.datos.piezas[0].descripcion_cliente, 'Fabricación en MDF');
+  assert.strictEqual(c.datos.piezas[1].nombre, 'Pieza 2');
+  assert.strictEqual(c.datos.condiciones, '60 % de anticipo');
+});

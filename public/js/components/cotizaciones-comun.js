@@ -54,6 +54,7 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
       <a class="btn" href="/api/cotizaciones/${id}/cliente" target="_blank" rel="noopener" data-cliente>${icon('file')}Documento para el cliente</a>
       <button class="btn btn-primary" data-close type="button">Listo</button>`,
     onClose: async () => {
+      window.removeEventListener('focus', traerTextosCliente);
       guardarDiferido.flush?.();
       await guardando;
       if (huboCambios) alCambiar?.();
@@ -87,7 +88,10 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
   const guardarDiferido = () => {
     clearTimeout(temporizador);
     pintarGuardado('saving', 'Cambios sin guardar…');
-    temporizador = setTimeout(guardar, 900);
+    temporizador = setTimeout(() => {
+      temporizador = null;
+      guardar();
+    }, 900);
   };
   guardarDiferido.flush = () => {
     if (temporizador) {
@@ -411,6 +415,32 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
       else window.location.href = enlace.href;
     });
   }
+  // Los textos pueden corregirse en el documento del cliente (otra pestaña):
+  // al volver se traen para no pisarlos con la copia que tiene el editor.
+  async function traerTextosCliente() {
+    if (temporizador) return;
+    await guardando;
+    try {
+      const actual = await api(`/cotizaciones/${id}`);
+      let cambio = false;
+      const igualar = (destino, origen, campo) => {
+        if ((destino[campo] || '') !== (origen[campo] || '')) {
+          destino[campo] = origen[campo];
+          cambio = true;
+        }
+      };
+      for (const campo of ['tiempo_entrega', 'condiciones']) igualar(doc, actual, campo);
+      doc.piezas.forEach((p, i) => {
+        if (!actual.piezas[i]) return;
+        igualar(p, actual.piezas[i], 'nombre');
+        igualar(p, actual.piezas[i], 'descripcion_cliente');
+      });
+      if (cambio && !temporizador) pintar();
+    } catch {
+      // Si falla se conserva lo que muestra el editor.
+    }
+  }
+  window.addEventListener('focus', traerTextosCliente);
   pintar();
 }
 
