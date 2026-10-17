@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Spacio Publicidad · Control de trabajos</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <!-- Pantalla de acceso -->
+  <section id="login" class="login" hidden>
+    <form class="login-card" id="login-form" autocomplete="on">
+      <div class="brand brand-lg">
+        <span class="brand-mark">S</span>
+        <div>
+          <strong>Spacio Publicidad</strong>
+          <small>Control de trabajos</small>
+        </div>
+      </div>
+      <label class="field">
+        <span>Usuario</span>
+        <input name="usuario" autocomplete="username" required autofocus>
+      </label>
+      <label class="field">
+        <span>Contraseña</span>
+        <input name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <p class="form-error" id="login-error" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Ingresar</button>
+    </form>
+  </section>
+
+  <!-- Aplicación -->
+  <div id="app" class="layout" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">S</span>
+        <div>
+          <strong>Spacio Publicidad</strong>
+          <small>Control de trabajos</small>
+        </div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-chip">
+          <span class="avatar" id="user-avatar"></span>
+          <div>
+            <strong id="user-name"></strong>
+            <small id="user-role"></small>
+          </div>
+        </div>
+        <button class="nav-link" id="btn-password" type="button"></button>
+        <button class="nav-link" id="btn-logout" type="button"></button>
+      </div>
+    </aside>
+    <div class="backdrop" id="backdrop"></div>
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn" id="btn-menu" type="button" aria-label="Abrir menú"></button>
+        <h1 id="page-title"></h1>
+      </header>
+      <main id="view" class="view"></main>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
