@@ -134,3 +134,17 @@ test('lee el Excel de trabajos pendientes de Spacio', async () => {
   assert.strictEqual(ivoo.estatus, 'reclamo');
   assert.strictEqual(ivoo.pendientes.length, 4);
 });
+
+test('un trabajo puede tener varios estatus a la vez', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Multi', estatus: 'render,por_cotizar' } });
+  assert.strictEqual(t.datos.estatus, 'por_cotizar,render'); // se ordena según la configuración
+  const antes = (await pedir('/trabajos/resumen')).datos.porEstatus;
+  assert.ok(antes.por_cotizar >= 1 && antes.render >= 1);
+  assert.ok((await pedir('/trabajos?estatus=render')).datos.some((x) => x.id === t.datos.id));
+  assert.ok((await pedir('/trabajos?estatus=por_cotizar')).datos.some((x) => x.id === t.datos.id));
+  // Finalizado va solo y deja de estar activo
+  const fin = await pedir(`/trabajos/${t.datos.id}`, { method: 'PATCH', body: { estatus: 'render,finalizado' } });
+  assert.strictEqual(fin.datos.estatus, 'finalizado');
+  assert.ok(!(await pedir('/trabajos?estatus=activos')).datos.some((x) => x.id === t.datos.id));
+  assert.strictEqual((await pedir(`/trabajos/${t.datos.id}`, { method: 'PATCH', body: { estatus: 'render,otro' } })).status, 400);
+});

@@ -5,6 +5,7 @@ const config = require('../config');
 const { requiereAdmin } = require('../auth');
 const { HttpError, hoy, sumarDias, leerCampos, likeParam } = require('../lib/util');
 const almacen = require('../lib/almacen');
+const estatus = require('../lib/estatus');
 
 const CAMPOS = {
   cliente: 'text',
@@ -20,8 +21,9 @@ const CAMPOS = {
   observaciones: 'text',
 };
 const CAMPOS_FECHA = ['fecha_inicio', 'fecha_cotizacion', 'fecha_entrega'];
-const CERRADOS_SQL = config.ESTATUS_CERRADOS.map((e) => `'${e}'`).join(', ');
-const SIN_ALERTA_SQL = config.ESTATUS_SIN_ALERTA.map((e) => `'${e}'`).join(', ');
+// Condiciones SQL según los estatus del trabajo (puede tener varios).
+const ABIERTO = (col = 't.estatus') => `NOT ${estatus.sqlContiene(col, config.ESTATUS_CERRADOS)}`;
+const CON_ALERTA = (col = 't.estatus') => `NOT ${estatus.sqlContiene(col, config.ESTATUS_SIN_ALERTA)}`;
 
 const SELECT_TRABAJO = `
   SELECT t.*, (SELECT COUNT(*) FROM adjuntos a WHERE a.trabajo_id = t.id) AS total_adjuntos,
@@ -35,10 +37,7 @@ const listarPendientes = (trabajoId) =>
 const listarAdjuntos = (trabajoId) => db.all('SELECT * FROM adjuntos WHERE trabajo_id = ? ORDER BY id', trabajoId);
 
 function validarEstatus(datos) {
-  if ('estatus' in datos) {
-    if (datos.estatus === null) datos.estatus = 'por_cotizar';
-    if (!config.ESTATUS_KEYS.includes(datos.estatus)) throw new HttpError(400, 'Estatus no válido');
-  }
+  if ('estatus' in datos) datos.estatus = estatus.normalizar(datos.estatus);
 }
 
 function obtener(id) {
@@ -61,13 +60,10 @@ function consultar(q) {
     params.push(like, like, like, like, like, like, numero, like);
   }
   if (q.estatus === 'activos') {
-    where.push(`t.estatus NOT IN (${CERRADOS_SQL})`);
+    where.push(ABIERTO());
   } else if (q.estatus) {
-    const lista = String(q.estatus).split(',').filter((e) => config.ESTATUS_KEYS.includes(e));
-    if (lista.length) {
-      where.push(`t.estatus IN (${lista.map(() => '?').join(', ')})`);
-      params.push(...lista);
-    }
+    const lista = estatus.lista(q.estatus).filter((e) => config.ESTATUS_KEYS.includes(e));
+    if (lista.length) where.push(estatus.sqlContiene('t.estatus', lista));
   }
   const campoFecha = CAMPOS_FECHA.includes(q.campo_fecha) ? q.campo_fecha : 'fecha_entrega';
   if (q.desde) {
@@ -79,10 +75,10 @@ function consultar(q) {
     params.push(q.hasta);
   }
   if (q.alerta === 'atrasados') {
-    where.push(`t.estatus NOT IN (${SIN_ALERTA_SQL}) AND t.fecha_entrega < ?`);
+    where.push(`${CON_ALERTA()} AND t.fecha_entrega < ?`);
     params.push(hoy());
   } else if (q.alerta === 'proximos') {
-    where.push(`t.estatus NOT IN (${SIN_ALERTA_SQL}) AND t.fecha_entrega BETWEEN ? AND ?`);
+    where.push(`${CON_ALERTA()} AND t.fecha_entrega BETWEEN ? AND ?`);
     params.push(hoy(), sumarDias(hoy(), config.DIAS_ALERTA));
   }
   const ordenes = {
@@ -124,21 +120,19 @@ router.get('/', async (req, res) => res.json(await consultar(req.query)));
 
 router.get('/resumen', async (req, res) => {
   const h = hoy();
-  const [conteos, totales] = await Promise.all([
-    db.all('SELECT estatus, COUNT(*) AS total FROM trabajos GROUP BY estatus'),
-    db.get(
-      `SELECT
-         SUM(estatus NOT IN (${SIN_ALERTA_SQL}) AND fecha_entrega < ?) AS atrasados,
-         SUM(estatus NOT IN (${SIN_ALERTA_SQL}) AND fecha_entrega BETWEEN ? AND ?) AS proximos,
-         SUM(estatus NOT IN (${CERRADOS_SQL})) AS activos
-       FROM trabajos`,
-      h,
-      h,
-      sumarDias(h, config.DIAS_ALERTA)
-    ),
-  ]);
-  const porEstatus = Object.fromEntries(config.ESTATUS_KEYS.map((k) => [k, 0]));
-  for (const r of conteos) porEstatus[r.estatus] = r.total;
+  // Un trabajo con varios estatus cuenta en cada uno de ellos.
+  const totales = await db.get(
+    `SELECT
+       ${config.ESTATUS_KEYS.map((k) => `SUM(${estatus.sqlContiene('estatus', [k])}) AS "${k}"`).join(',\n       ')},
+       SUM(${CON_ALERTA('estatus')} AND fecha_entrega < ?) AS atrasados,
+       SUM(${CON_ALERTA('estatus')} AND fecha_entrega BETWEEN ? AND ?) AS proximos,
+       SUM(${ABIERTO('estatus')}) AS activos
+     FROM trabajos`,
+    h,
+    h,
+    sumarDias(h, config.DIAS_ALERTA)
+  );
+  const porEstatus = Object.fromEntries(config.ESTATUS_KEYS.map((k) => [k, totales[k] || 0]));
   res.json({
     porEstatus,
     atrasados: totales.atrasados || 0,
@@ -191,21 +185,22 @@ router.get('/exportar', async (req, res) => {
   ];
   const aFecha = (iso) => (iso ? new Date(`${iso}T00:00:00Z`) : null);
   for (const t of filas) {
-    const abierto = !config.ESTATUS_SIN_ALERTA.includes(t.estatus);
+    const claves = estatus.lista(t.estatus);
+    const abierto = !claves.some((k) => config.ESTATUS_SIN_ALERTA.includes(k));
     let situacion = '';
     if (abierto && t.fecha_entrega && t.fecha_entrega < h) situacion = 'Atrasado';
     else if (abierto && t.fecha_entrega && t.fecha_entrega <= limiteProximo) situacion = 'Próximo';
     const fila = hoja.addRow({
       ...t,
       numero: `${config.PREFIJO_TRABAJO}${String(t.numero).padStart(4, '0')}`,
-      estatus: etiqueta[t.estatus]?.label || t.estatus,
+      estatus: estatus.etiquetas(t.estatus),
       fecha_inicio: aFecha(t.fecha_inicio),
       fecha_cotizacion: aFecha(t.fecha_cotizacion),
       fecha_entrega: aFecha(t.fecha_entrega),
       pendientes: (pendientesPorTrabajo[t.id] || []).join('\n'),
       situacion,
     });
-    const color = etiqueta[t.estatus]?.color?.replace('#', '');
+    const color = claves.length === 1 ? etiqueta[claves[0]]?.color?.replace('#', '') : null;
     if (color) fila.getCell('estatus').font = { color: { argb: `FF${color}` }, bold: true };
     if (situacion === 'Atrasado') {
       fila.getCell('situacion').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE2E4' } };
@@ -238,7 +233,6 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   const datos = leerCampos(req.body, CAMPOS, { requeridos: ['cliente'] });
-  if (datos.estatus === null) datos.estatus = 'por_cotizar';
   validarEstatus(datos);
   const pendientes = Array.isArray(req.body.pendientes) ? req.body.pendientes : [];
   const id = await crearTrabajo(datos, pendientes, req.usuario.id);

@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { state, estatusPorKey, sinAlerta } from './state.js';
+import { state, estatusPorKey, sinAlerta, listaEstatus } from './state.js';
 
 // ---------- Utilidades de texto y formato ----------
 
@@ -57,17 +57,31 @@ export function tamanoArchivo(bytes) {
 
 // ---------- Estatus y vencimientos ----------
 
-export function badgeEstatus(key) {
-  const e = estatusPorKey(key);
-  return `<span class="badge" style="--c:${e?.color || '#64748b'}">${esc(e?.label || key)}</span>`;
+// Una etiqueta de color por cada estatus del trabajo.
+export function badgeEstatus(valor) {
+  return listaEstatus(valor)
+    .map((key) => {
+      const e = estatusPorKey(key);
+      return `<span class="badge" style="--c:${e?.color || '#64748b'}">${esc(e?.label || key)}</span>`;
+    })
+    .join('');
 }
 
-export function selectEstatus(key, attrs = '') {
-  const e = estatusPorKey(key);
-  const opciones = state.config.estatus
-    .map((s) => `<option value="${s.key}" ${s.key === key ? 'selected' : ''}>${esc(s.label)}</option>`)
-    .join('');
-  return `<select class="status-select" style="--c:${e?.color}" aria-label="Estatus" ${attrs}>${opciones}</select>`;
+// Botón de la tabla que muestra los estatus y abre el selector.
+export function botonEstatus(t) {
+  return `<button type="button" class="status-btn" data-estatus-de="${t.id}" aria-label="Cambiar estatus">
+    ${badgeEstatus(t.estatus)}${icon('chevron')}</button>`;
+}
+
+// Casillas para elegir uno o varios estatus.
+export function selectorEstatus(valor) {
+  const actuales = listaEstatus(valor);
+  return `<div class="status-chips" role="group" aria-label="Estatus">${state.config.estatus
+    .map(
+      (e) => `<label class="status-chip" style="--c:${e.color}">
+        <input type="checkbox" value="${e.key}" ${actuales.includes(e.key) ? 'checked' : ''}><span>${esc(e.label)}</span></label>`
+    )
+    .join('')}</div>`;
 }
 
 // Devuelve 'late' | 'soon' | null según la fecha de entrega del trabajo.
@@ -162,6 +176,10 @@ export function campo(def, valor) {
   const req = def.required ? 'required' : '';
   const ph = def.placeholder ? `placeholder="${esc(def.placeholder)}"` : '';
   let control;
+  if (def.type === 'estatus') {
+    return `<div class="field ${def.full ? 'full' : ''}"><span>${esc(def.label)}</span>
+      ${selectorEstatus(v)}<input type="hidden" name="${def.name}" value="${esc(v)}"></div>`;
+  }
   if (def.type === 'textarea') {
     control = `<textarea name="${def.name}" ${req} ${ph} rows="${def.rows || 3}">${esc(v)}</textarea>`;
   } else if (def.type === 'select') {

@@ -2,9 +2,9 @@
 // la tabla de trabajos y la ficha (detalle editable con autoguardado).
 import { api } from '../api.js';
 import { icon } from '../icons.js';
-import { state, estatusPorKey, numeroTrabajo, esAdmin } from '../state.js';
+import { state, numeroTrabajo, esAdmin, alternarEstatus, listaEstatus } from '../state.js';
 import {
-  esc, fecha, fechaHora, campo, modal, toast, confirmar, selectEstatus, badgeEstatus,
+  esc, fecha, fechaHora, campo, modal, toast, confirmar, botonEstatus, selectorEstatus, badgeEstatus,
   situacion, etiquetaVencimiento, tamanoArchivo, debounce, vacio,
 } from '../ui.js';
 
@@ -22,7 +22,7 @@ export function tablaTrabajos(lista, { compacta = false } = {}) {
         <td data-label="Tienda">${esc(t.tienda)}</td>
         ${compacta ? '' : `<td data-label="Ubicación" class="hide-sm">${esc(t.ubicacion)}</td>`}
         <td data-label="Descripción" class="truncate" title="${esc(t.descripcion)}">${esc(t.descripcion)}</td>
-        <td data-label="Estatus" data-stop>${selectEstatus(t.estatus, `data-estatus="${t.id}"`)}</td>
+        <td data-label="Estatus" data-stop>${botonEstatus(t)}</td>
         <td data-label="Pendiente" class="truncate" title="${esc(t.proximo_pendiente)}">${t.proximo_pendiente ? `${esc(t.proximo_pendiente)}${t.total_pendientes > 1 ? ` <span class="more">+${t.total_pendientes - 1}</span>` : ''}` : ''}</td>
         ${compacta ? '' : `<td data-label="Inicio" class="nowrap hide-sm">${fecha(t.fecha_inicio)}</td>`}
         ${compacta ? '' : `<td data-label="Entrega cotización" class="nowrap hide-sm">${fecha(t.fecha_cotizacion)}</td>`}
@@ -44,21 +44,84 @@ export function tablaTrabajos(lista, { compacta = false } = {}) {
     <tbody>${filas}</tbody></table></div>`;
 }
 
-// Conecta los eventos de la tabla: abrir ficha al hacer clic y cambio rápido de estatus.
-export function conectarTabla(contenedor, { alCambiar }) {
-  contenedor.addEventListener('change', async (e) => {
-    const sel = e.target.closest('[data-estatus]');
-    if (!sel) return;
-    sel.style.setProperty('--c', estatusPorKey(sel.value)?.color);
-    try {
-      await api(`/trabajos/${sel.dataset.estatus}`, { method: 'PATCH', body: { estatus: sel.value } });
-      toast(`Estatus actualizado: ${estatusPorKey(sel.value).label}`);
-      alCambiar();
-    } catch (err) {
-      toast(err.message, 'error');
-    }
+// Mantiene sincronizadas las casillas de estatus y avisa cada cambio.
+export function conectarSelectorEstatus(contenedor, valorInicial, alCambiar) {
+  let valor = valorInicial || 'por_cotizar';
+  contenedor.addEventListener('change', (e) => {
+    const casilla = e.target.closest('input[type=checkbox]');
+    if (!casilla) return;
+    e.stopPropagation();
+    valor = alternarEstatus(valor, casilla.value, casilla.checked);
+    const actuales = listaEstatus(valor);
+    contenedor.querySelectorAll('input[type=checkbox]').forEach((c) => (c.checked = actuales.includes(c.value)));
+    alCambiar(valor);
   });
+}
+
+// Ventana flotante junto al botón de estatus de la tabla: cada casilla se guarda al momento.
+function abrirSelectorTabla(boton, trabajo, alCerrar) {
+  document.querySelector('.status-pop')?.cerrar();
+  const pop = document.createElement('div');
+  pop.className = 'status-pop';
+  pop.dataset.de = trabajo.id;
+  pop.innerHTML = `<div class="status-pop-title">Estatus de ${esc(numeroTrabajo(trabajo.numero))} <small>(puedes marcar varios)</small></div>
+    ${selectorEstatus(trabajo.estatus)}`;
+  document.body.append(pop);
+  const r = boton.getBoundingClientRect();
+  const ancho = pop.offsetWidth;
+  pop.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - ancho - 8))}px`;
+  const abajo = r.bottom + 6 + pop.offsetHeight < window.innerHeight;
+  pop.style.top = `${abajo ? r.bottom + 6 : Math.max(8, r.top - pop.offsetHeight - 6)}px`;
+
+  let cambio = false;
+  let guardando = Promise.resolve();
+  conectarSelectorEstatus(pop, trabajo.estatus, (valor) => {
+    cambio = true;
+    trabajo.estatus = valor;
+    boton.innerHTML = `${badgeEstatus(valor)}${icon('chevron')}`;
+    guardando = guardando
+      .then(() => api(`/trabajos/${trabajo.id}`, { method: 'PATCH', body: { estatus: valor } }))
+      .catch((err) => toast(err.message, 'error'));
+  });
+  let cerrado = false;
+  const cerrar = () => {
+    if (cerrado) return;
+    cerrado = true;
+    pop.remove();
+    document.removeEventListener('pointerdown', alTocarFuera, true);
+    document.removeEventListener('keydown', alTeclear);
+    window.removeEventListener('scroll', alDesplazar, true);
+    window.removeEventListener('resize', cerrar);
+    if (cambio) {
+      guardando.then(() => {
+        toast('Estatus actualizado');
+        alCerrar();
+      });
+    }
+  };
+  const alTocarFuera = (e) => !pop.contains(e.target) && !boton.contains(e.target) && cerrar();
+  const alTeclear = (e) => e.key === 'Escape' && cerrar();
+  const alDesplazar = (e) => !pop.contains(e.target) && cerrar();
+  pop.cerrar = cerrar;
+  setTimeout(() => {
+    document.addEventListener('pointerdown', alTocarFuera, true);
+    document.addEventListener('keydown', alTeclear);
+    window.addEventListener('scroll', alDesplazar, true);
+    window.addEventListener('resize', cerrar);
+  });
+}
+
+// Conecta los eventos de la tabla: abrir ficha al hacer clic y cambio rápido de estatus.
+export function conectarTabla(contenedor, { alCambiar, obtenerTrabajo }) {
   contenedor.addEventListener('click', (e) => {
+    const boton = e.target.closest('[data-estatus-de]');
+    if (boton) {
+      const abierto = document.querySelector('.status-pop');
+      if (abierto?.dataset.de === boton.dataset.estatusDe) return abierto.cerrar(); // segundo toque: cerrar
+      const t = obtenerTrabajo(Number(boton.dataset.estatusDe));
+      if (t) abrirSelectorTabla(boton, t, alCambiar);
+      return;
+    }
     if (e.target.closest('[data-stop]')) return;
     const fila = e.target.closest('tr[data-id]');
     if (fila) abrirFicha(Number(fila.dataset.id), { alCerrar: alCambiar });
@@ -80,12 +143,7 @@ function camposFicha(s = {}) {
     { name: 'tienda', label: 'Nombre de tienda', list: s.tienda },
     { name: 'ubicacion', label: 'Ubicación', list: s.ubicacion },
     { name: 'descripcion', label: 'Descripción del trabajo', type: 'textarea', full: true },
-    {
-      name: 'estatus',
-      label: 'Estatus',
-      type: 'select',
-      options: state.config.estatus.map((e) => ({ value: e.key, label: e.label })),
-    },
+    { name: 'estatus', label: 'Estatus (puedes marcar varios)', type: 'estatus', full: true },
     { name: 'responsable', label: 'Responsable', list: s.responsable },
     { name: 'fecha_inicio', label: 'Fecha de inicio', type: 'date' },
     { name: 'fecha_cotizacion', label: 'Fecha de entrega de cotización', type: 'date' },
@@ -260,6 +318,12 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     });
     form.addEventListener('change', (e) => e.target.name && guardarCampo(e.target.name));
   }
+
+  // --- Estatus (casillas; se guardan en el campo oculto "estatus") ---
+  conectarSelectorEstatus(form.querySelector('.status-chips'), trabajo.estatus, (valor) => {
+    form.elements.estatus.value = valor;
+    if (!nuevo) guardarCampo('estatus');
+  });
 
   // --- Pendientes ---
   // En un trabajo nuevo se guardan en memoria y se envían al crearlo.

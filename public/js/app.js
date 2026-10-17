@@ -45,7 +45,7 @@ async function navegar() {
   document.body.classList.remove('menu-open');
   limpiarVista?.();
   limpiarVista = null;
-  document.querySelectorAll('.modal-root').forEach((m) => m.remove());
+  document.querySelectorAll('.modal-root, .status-pop').forEach((m) => m.remove());
   document.body.style.overflow = '';
   pintarMenu();
   $('#page-title').textContent = mod.titulo;

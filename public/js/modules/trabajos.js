@@ -65,6 +65,7 @@ export default {
       </section>`;
 
     const $ = (s) => vista.querySelector(s);
+    let trabajos = [];
     const controles = ['q', 'estatus', 'orden', 'campo_fecha', 'desde', 'hasta'];
     for (const n of controles) vista.querySelector(`[name=${n}]`).value = f[n];
 
@@ -79,6 +80,7 @@ export default {
       }
       pintarChips();
       const lista = await api(`/trabajos${qs(f)}`);
+      trabajos = lista;
       $('#contador').textContent = `${lista.length} ${lista.length === 1 ? 'trabajo' : 'trabajos'}`;
       $('#tabla').innerHTML = tablaTrabajos(lista);
       const th = $('th[data-sort=entrega]');
@@ -118,7 +120,7 @@ export default {
     $('#btn-exportar').addEventListener('click', () => {
       window.location.href = `/api/trabajos/exportar${qs(f)}`;
     });
-    conectarTabla($('#tabla'), { alCambiar: cargar });
+    conectarTabla($('#tabla'), { alCambiar: cargar, obtenerTrabajo: (id) => trabajos.find((t) => t.id === id) });
 
     await cargar();
     if (params.get('id')) abrirFicha(Number(params.get('id')), { alCerrar: cargar }).catch(() => {});

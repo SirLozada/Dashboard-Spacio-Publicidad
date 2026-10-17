@@ -28,6 +28,7 @@ export default {
       </section>`;
 
     const $ = (s) => vista.querySelector(s);
+    let trabajos = [];
 
     async function cargar() {
       const params = { orden: 'entrega_asc' };
@@ -35,6 +36,7 @@ export default {
       else params.estatus = 'activos';
       if (filtro.alerta) params.alerta = filtro.alerta;
       const [resumen, lista] = await Promise.all([api('/trabajos/resumen'), api(`/trabajos${qs(params)}`)]);
+      trabajos = lista;
 
       const tarjetas = state.config.estatus.filter((e) => e.dashboard);
       $('#cards').style.setProperty('--n', tarjetas.length);
@@ -85,7 +87,7 @@ export default {
       cargar();
     });
     $('#btn-nuevo').addEventListener('click', () => abrirFicha(null, { alCerrar: cargar }));
-    conectarTabla($('#tabla'), { alCambiar: cargar });
+    conectarTabla($('#tabla'), { alCambiar: cargar, obtenerTrabajo: (id) => trabajos.find((t) => t.id === id) });
 
     await cargar();
   },
