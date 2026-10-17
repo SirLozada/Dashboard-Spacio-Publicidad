@@ -9,6 +9,13 @@ const { DATA_DIR } = require('./config');
 function crearCliente() {
   const url = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
   if (url) return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN });
+  // En Vercel el disco no es persistente: sin Turso no hay dónde guardar los datos.
+  if (process.env.VERCEL) {
+    const falta = () => {
+      throw new Error('Falta conectar la base de datos Turso al proyecto en Vercel (Storage).');
+    };
+    return { execute: falta, batch: falta, transaction: falta };
+  }
   fs.mkdirSync(DATA_DIR, { recursive: true });
   return createClient({ url: `file:${path.join(DATA_DIR, 'spacio.db')}` });
 }

@@ -62,7 +62,7 @@ app.use('/api', async (req, res, next) => {
     next();
   } catch (err) {
     console.error('No se pudo preparar la base de datos:', err);
-    res.status(503).json({ error: 'La base de datos no está disponible. Revisa la configuración.' });
+    res.status(503).json({ error: `La base de datos no está disponible. ${err.message}` });
   }
 });
 
