@@ -31,7 +31,8 @@ export const badgeCot = (e) => `<span class="badge" style="--c:${ESTADOS_COT[e]?
 const lineaVacia = () => ({ material: '', descripcion: '', proveedor: '', cantidad: 1, costo_unitario: 0 });
 
 let catalogo = null;
-const cargarCatalogo = async () => (catalogo ??= await api('/materiales').catch(() => []));
+// Se recarga al abrir cada cotización para incluir lo último agregado en Materiales.
+const cargarCatalogo = async () => (catalogo = await api('/materiales').catch(() => catalogo ?? []));
 
 // ---------- Editor ----------
 
@@ -225,7 +226,8 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
                 <tbody>${p.lineas
                   .map(
                     (l, j) => `<tr class="sin-clic">
-                      <td>${campoTxt(`data-pieza="${i}" data-linea="${j}" data-campo="material"`, l.material, 'list="dl-materiales" autocomplete="off"')}</td>
+                      <td><div class="input-con-boton">${campoTxt(`data-pieza="${i}" data-linea="${j}" data-campo="material"`, l.material, 'list="dl-materiales" autocomplete="off" placeholder="Escribe o elige de la lista"')}
+                        <button class="btn btn-sm btn-lista" type="button" data-accion="elegir-material" data-pieza="${i}" data-linea="${j}" title="Elegir de la lista de materiales" aria-label="Elegir de la lista de materiales">${icon('chevron')}</button></div></td>
                       <td>${campoTxt(`data-pieza="${i}" data-linea="${j}" data-campo="descripcion"`, l.descripcion)}</td>
                       <td>${campoTxt(`data-pieza="${i}" data-linea="${j}" data-campo="proveedor"`, l.proveedor)}</td>
                       <td>${campoNum(`data-pieza="${i}" data-linea="${j}" data-campo="cantidad"`, l.cantidad)}</td>
@@ -236,7 +238,10 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
                   )
                   .join('')}</tbody></table></div>
               <div class="cot-pieza-pie">
-                <button class="btn btn-sm" type="button" data-accion="agregar-linea" data-pieza="${i}">${icon('plus')}Agregar material o servicio</button>
+                <div class="cot-botones-comision">
+                  <button class="btn btn-sm" type="button" data-accion="agregar-linea" data-pieza="${i}">${icon('plus')}Agregar línea manual</button>
+                  <button class="btn btn-sm" type="button" data-accion="agregar-de-lista" data-pieza="${i}">${icon('materiales')}Agregar de la lista de materiales</button>
+                </div>
                 <div class="cot-calculo" data-resumen-pieza="${i}"></div>
               </div>
             </div>`
@@ -346,6 +351,25 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
     const i = Number(b.dataset.pieza);
     const j = Number(b.dataset.linea ?? b.dataset.viatico ?? b.dataset.comision);
     switch (b.dataset.accion) {
+      case 'elegir-material':
+        elegirMaterial(materiales, { varios: false }, (x) => {
+          Object.assign(doc.piezas[i].lineas[j], desdeCatalogo(x));
+          pintar();
+          guardarDiferido();
+        });
+        return;
+      case 'agregar-de-lista': {
+        const lineas = doc.piezas[i].lineas;
+        elegirMaterial(materiales, { varios: true }, (x) => {
+          // Se aprovecha la última fila si quedó vacía.
+          const ultima = lineas.at(-1);
+          if (ultima && !ultima.material && !aNumero(ultima.costo_unitario)) Object.assign(ultima, desdeCatalogo(x));
+          else lineas.push({ ...lineaVacia(), ...desdeCatalogo(x) });
+          pintar();
+          guardarDiferido();
+        });
+        return;
+      }
       case 'agregar-linea':
         doc.piezas[i].lineas.push(lineaVacia());
         break;
@@ -460,6 +484,69 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
   }
   window.addEventListener('focus', traerTextosCliente);
   pintar();
+}
+
+// Datos que se copian a la línea al elegir un material del catálogo.
+const desdeCatalogo = (x) => ({
+  material_id: x.id,
+  material: x.nombre,
+  proveedor: x.proveedor_nombre || '',
+  costo_unitario: x.precio ?? 0,
+});
+
+// Lista de materiales para elegir: con búsqueda y filtro por categoría.
+// En modo "varios" queda abierta para agregar varias líneas seguidas.
+function elegirMaterial(materiales, { varios }, alElegir) {
+  const categorias = [...new Set(materiales.map((x) => x.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  const m = modal({
+    titulo: varios ? 'Agregar de la lista de materiales' : 'Elegir de la lista de materiales',
+    body: `<div class="lista-mat">
+      <div class="lista-mat-filtros">
+        <input class="input" type="search" data-buscar placeholder="Buscar material, categoría o proveedor…" autocomplete="off">
+        ${categorias.length ? `<select class="input" data-categoria><option value="">Todas las categorías</option>${categorias.map((c) => `<option>${esc(c)}</option>`).join('')}</select>` : ''}
+      </div>
+      ${varios ? '<p class="muted nota">Haz clic en cada material que quieras agregar. Se agrega como una línea nueva con su proveedor y costo.</p>' : ''}
+      <div class="lista-mat-items" data-items></div>
+    </div>`,
+    foot: `${varios ? '<span class="muted left" data-contador></span>' : ''}<button class="btn btn-primary" data-close type="button">${varios ? 'Listo' : 'Cancelar'}</button>`,
+  });
+  const buscar = m.el.querySelector('[data-buscar]');
+  const categoria = m.el.querySelector('[data-categoria]');
+  const items = m.el.querySelector('[data-items]');
+  let agregados = 0;
+  const normalizar = (t) => (t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const pintarLista = () => {
+    const q = normalizar(buscar.value.trim());
+    const cat = categoria?.value || '';
+    const lista = materiales.filter(
+      (x) => (!cat || x.categoria === cat) && (!q || normalizar([x.nombre, x.categoria, x.proveedor_nombre].join(' ')).includes(q))
+    );
+    items.innerHTML = lista.length
+      ? lista
+          .map(
+            (x) => `<button type="button" class="lista-mat-item" data-id="${x.id}">
+              <span><strong>${esc(x.nombre)}</strong><small>${esc([x.categoria, x.unidad, x.proveedor_nombre].filter(Boolean).join(' · ') || '—')}</small></span>
+              <span class="precio">${x.precio != null ? usd(x.precio) : '<span class="muted">Sin precio</span>'}</span></button>`
+          )
+          .join('')
+      : `<p class="muted" style="padding:16px;text-align:center">${
+          materiales.length ? 'No hay materiales que coincidan. Puedes escribirlo a mano en la línea.' : 'La lista de materiales está vacía. Agrégalos en el módulo Materiales y precios.'
+        }</p>`;
+  };
+  buscar.addEventListener('input', pintarLista);
+  categoria?.addEventListener('change', pintarLista);
+  items.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-id]');
+    if (!b) return;
+    const x = materiales.find((y) => String(y.id) === b.dataset.id);
+    alElegir(x);
+    if (!varios) return m.close();
+    agregados++;
+    b.classList.add('agregado');
+    m.el.querySelector('[data-contador]').textContent = `${agregados} ${agregados === 1 ? 'línea agregada' : 'líneas agregadas'}`;
+  });
+  pintarLista();
+  buscar.focus();
 }
 
 // Calculadora de comidas y hotel: genera las líneas de viáticos.
