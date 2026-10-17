@@ -6,7 +6,8 @@ const path = require('path');
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'spacio-test-'));
 process.env.ADMIN_PASSWORD = 'clave-de-prueba';
-const app = require('../server/index');
+process.env.CARPETA_IMPORTACION = path.join(process.env.DATA_DIR, 'sin-importacion');
+const app = require('../server/app');
 
 let servidor;
 let base;

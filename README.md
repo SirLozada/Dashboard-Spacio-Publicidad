@@ -50,7 +50,29 @@ pendiente es el render), PENDIENTE APROBACION → Pendiente por aprobación,
 PRODUCCION → Producción, PENDIENTE REINSTALACION / Reclamo pendiente → Reclamo,
 Instalado → Instalado.
 
-## Puesta en marcha
+## Publicar en Vercel
+
+La aplicación corre en Vercel con dos servicios de almacenamiento, ambos se
+agregan desde el panel del proyecto en Vercel (**Storage**):
+
+| Qué | Servicio | Variables que crea |
+| --- | --- | --- |
+| Base de datos | **Turso** (Marketplace → Turso Cloud) | `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` |
+| Archivos y fotos | **Vercel Blob** (acceso *Public*) | `BLOB_READ_WRITE_TOKEN` |
+
+Variables a definir en **Settings → Environment Variables**:
+
+- `ADMIN_PASSWORD`: contraseña inicial de Fernando (sólo se usa la primera vez).
+- `ZONA_HORARIA` (opcional, por defecto `America/Caracas`): zona horaria para calcular los atrasos.
+- `BLOB_ACCESS=private` sólo si el almacén Blob se creó como privado.
+
+Después de conectar Turso y Blob, hacer **Redeploy**. En la primera visita se
+crean las tablas, el usuario `fernando` y se importan los Excel de `datos-iniciales/`.
+
+`vercel.json` ya define todo lo necesario: la carpeta `public/` se sirve como
+sitio estático y `api/index.js` atiende todas las rutas `/api/*`.
+
+## Desarrollo local / servidor propio
 
 Requisitos: Node.js 20 o superior.
 
@@ -60,36 +82,22 @@ npm start            # http://localhost:3000
 npm test             # pruebas automáticas de la API
 ```
 
-Variables de configuración: ver [`.env.example`](.env.example).
-
-### Despliegue
-
-La base de datos (SQLite) y los adjuntos se guardan en la carpeta `DATA_DIR`.
-**Esa carpeta debe estar en un disco persistente** y conviene respaldarla
-periódicamente (basta copiar la carpeta).
-
-Con Docker:
-
-```bash
-docker build -t spacio-dashboard .
-docker run -d -p 3000:3000 -v spacio-data:/data \
-  -e ADMIN_PASSWORD='una-clave-segura' -e TZ=America/Caracas spacio-dashboard
-```
-
-En servicios como Render, Railway o Fly.io: crear el servicio desde este
-repositorio con `npm start`, añadir un volumen/disco persistente y apuntar
-`DATA_DIR` a él. Usar siempre HTTPS (lo proveen estos servicios).
+Sin las variables de Turso y Blob, la base de datos y los adjuntos se guardan en
+la carpeta `DATA_DIR` (por defecto `./data`). Variables disponibles: ver
+[`.env.example`](.env.example).
 
 ## Estructura (preparada para crecer)
 
 ```
 server/
-  index.js            Arranque y registro de módulos del backend
+  app.js              Aplicación y registro de módulos del backend
+  index.js            Arranque como servidor propio (en Vercel: api/index.js)
   config.js           Estatus, prefijos, moneda… (fuente única, expuesta en /api/config)
-  db.js               Conexión SQLite y migraciones automáticas
+  db.js               Conexión libSQL/Turso (o SQLite local) y migraciones automáticas
   migrations/         Cambios de base de datos numerados (001_inicial.sql, …)
   auth.js             Inicio de sesión, sesiones y permisos
   lib/crud.js         Fábrica de rutas CRUD para módulos sencillos
+  lib/almacen.js      Adjuntos: disco local o Vercel Blob
   modules/            trabajos, materiales, proveedores, usuarios
 public/
   index.html, css/    Interfaz
@@ -100,7 +108,7 @@ public/
 
 **Agregar un módulo nuevo:**
 1. Crear `server/migrations/00X_nombre.sql` con la tabla (se aplica sola al arrancar).
-2. Crear `server/modules/nombre.js` (para tablas simples basta `crearCrud({...})`) y añadirlo a `MODULOS` en `server/index.js`.
+2. Crear `server/modules/nombre.js` (para tablas simples basta `crearCrud({...})`) y añadirlo a `MODULOS` en `server/app.js`.
 3. Crear `public/js/modules/nombre.js` con `{ id, titulo, icono, render }` y añadirlo a `MODULOS` en `public/js/app.js`; aparecerá en el menú lateral.
 
 Para añadir un estatus nuevo basta con editar la lista `ESTATUS` en `server/config.js`.

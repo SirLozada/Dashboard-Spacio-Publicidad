@@ -1,4 +1,5 @@
 const { crearCrud } = require('../lib/crud');
+const { db } = require('../db');
 
 const router = crearCrud({
   tabla: 'proveedores',
@@ -17,6 +18,8 @@ const router = crearCrud({
                FROM proveedores p`,
   busqueda: ['p.nombre', 'p.servicios', 'p.contacto', 'p.ubicacion', 'p.telefono'],
   orden: 'p.nombre COLLATE NOCASE',
+  // Los materiales del proveedor quedan sin proveedor asignado.
+  antesDeBorrar: (id) => db.run('UPDATE materiales SET proveedor_id = NULL WHERE proveedor_id = ?', id),
   soloAdminBorrar: true,
 });
 

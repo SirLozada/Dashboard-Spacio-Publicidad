@@ -5,11 +5,16 @@ class HttpError extends Error {
   }
 }
 
-// Fecha local de hoy en formato AAAA-MM-DD (respeta la variable de entorno TZ).
+// Fecha de hoy (AAAA-MM-DD) en la zona horaria de la empresa. Se usa una
+// variable propia porque Vercel no permite definir TZ.
+const formatoFecha = new Intl.DateTimeFormat('en-CA', {
+  timeZone: process.env.ZONA_HORARIA || 'America/Caracas',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
 function hoy() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return formatoFecha.format(new Date());
 }
 
 function sumarDias(fechaIso, dias) {

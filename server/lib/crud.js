@@ -15,13 +15,14 @@ function crearCrud({
   filtros = [], // columnas filtrables por igualdad (?columna=valor)
   orden = `${alias}.nombre COLLATE NOCASE`,
   antesDeGuardar, // (datos, existente) => void, permite ajustar datos
+  antesDeBorrar, // async (id) => void, p. ej. para desvincular registros relacionados
   soloAdminBorrar = false,
 }) {
   const router = express.Router();
 
-  const obtener = (id) => db.prepare(`${selectBase} WHERE ${alias}.id = ?`).get(id);
+  const obtener = (id) => db.get(`${selectBase} WHERE ${alias}.id = ?`, id);
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const where = [];
     const params = [];
     if (req.query.q && busqueda.length) {
@@ -35,47 +36,53 @@ function crearCrud({
       }
     }
     const sql = `${selectBase} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${orden}`;
-    res.json(db.prepare(sql).all(...params));
+    res.json(await db.all(sql, ...params));
   });
 
-  router.get('/:id', (req, res) => {
-    const fila = obtener(req.params.id);
+  router.get('/:id', async (req, res) => {
+    const fila = await obtener(req.params.id);
     if (!fila) throw new HttpError(404, 'Registro no encontrado');
     res.json(fila);
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const datos = leerCampos(req.body, campos, { requeridos });
     if (antesDeGuardar) antesDeGuardar(datos, null);
     const cols = Object.keys(datos);
-    const info = db
-      .prepare(`INSERT INTO ${tabla} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`)
-      .run(...cols.map((c) => datos[c]));
-    res.status(201).json(obtener(info.lastInsertRowid));
+    const info = await db.run(
+      `INSERT INTO ${tabla} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+      ...cols.map((c) => datos[c])
+    );
+    res.status(201).json(await obtener(info.lastInsertRowid));
   });
 
-  const actualizar = (req, res) => {
-    const existente = db.prepare(`SELECT * FROM ${tabla} WHERE id = ?`).get(req.params.id);
+  const actualizar = async (req, res) => {
+    const existente = await db.get(`SELECT * FROM ${tabla} WHERE id = ?`, req.params.id);
     if (!existente) throw new HttpError(404, 'Registro no encontrado');
     const datos = leerCampos(req.body, campos, { parcial: true, requeridos });
     if (antesDeGuardar) antesDeGuardar(datos, existente);
     const cols = Object.keys(datos);
     if (cols.length) {
-      db.prepare(
-        `UPDATE ${tabla} SET ${cols.map((c) => `${c} = ?`).join(', ')}, actualizado_en = datetime('now') WHERE id = ?`
-      ).run(...cols.map((c) => datos[c]), req.params.id);
+      await db.run(
+        `UPDATE ${tabla} SET ${cols.map((c) => `${c} = ?`).join(', ')}, actualizado_en = datetime('now') WHERE id = ?`,
+        ...cols.map((c) => datos[c]),
+        req.params.id
+      );
     }
-    res.json(obtener(req.params.id));
+    res.json(await obtener(req.params.id));
   };
   router.put('/:id', actualizar);
   router.patch('/:id', actualizar);
 
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     if (soloAdminBorrar && req.usuario.rol !== 'admin') {
       throw new HttpError(403, 'Sólo un administrador puede eliminar registros');
     }
-    const info = db.prepare(`DELETE FROM ${tabla} WHERE id = ?`).run(req.params.id);
-    if (!info.changes) throw new HttpError(404, 'Registro no encontrado');
+    if (!(await db.get(`SELECT id FROM ${tabla} WHERE id = ?`, req.params.id))) {
+      throw new HttpError(404, 'Registro no encontrado');
+    }
+    if (antesDeBorrar) await antesDeBorrar(req.params.id);
+    await db.run(`DELETE FROM ${tabla} WHERE id = ?`, req.params.id);
     res.json({ ok: true });
   });
 

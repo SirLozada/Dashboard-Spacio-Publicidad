@@ -111,7 +111,26 @@ function htmlAdjuntos(adjuntos) {
     .join('');
 }
 
+const nombreSeguro = (n) => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-').slice(-100);
+
+// Sube archivos y devuelve la lista actualizada de adjuntos del trabajo.
+// En Vercel cada archivo va directo a Vercel Blob y luego se registra en la API.
 async function subirArchivos(id, archivos) {
+  if (state.config.subidas === 'blob') {
+    const { upload } = await import('/js/vendor/vercel-blob-client.js');
+    let adjuntos = [];
+    for (const f of archivos) {
+      const blob = await upload(`trabajos/${id}/${nombreSeguro(f.name)}`, f, {
+        access: state.config.accesoBlob,
+        handleUploadUrl: `/api/trabajos/${id}/adjuntos/permiso`,
+      });
+      adjuntos = await api(`/trabajos/${id}/adjuntos/registrar`, {
+        method: 'POST',
+        body: { url: blob.url, nombre: f.name, mime: f.type || blob.contentType, tamano: f.size },
+      });
+    }
+    return adjuntos;
+  }
   const form = new FormData();
   for (const f of archivos) form.append('archivos', f);
   return api(`/trabajos/${id}/adjuntos`, { method: 'POST', form });

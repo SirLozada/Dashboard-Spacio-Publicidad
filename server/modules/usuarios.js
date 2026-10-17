@@ -5,15 +5,14 @@ const { HttpError } = require('../lib/util');
 
 const router = express.Router();
 
-const obtener = (id) => db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id);
-const totalAdminsActivos = () =>
-  db.prepare("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin' AND activo = 1").pluck().get();
+const obtener = (id) => db.get('SELECT * FROM usuarios WHERE id = ?', id);
+const totalAdminsActivos = () => db.value("SELECT COUNT(*) FROM usuarios WHERE rol = 'admin' AND activo = 1");
 
-router.get('/', (req, res) => {
-  res.json(db.prepare('SELECT * FROM usuarios ORDER BY nombre COLLATE NOCASE').all().map(usuarioPublico));
+router.get('/', async (req, res) => {
+  res.json((await db.all('SELECT * FROM usuarios ORDER BY nombre COLLATE NOCASE')).map(usuarioPublico));
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const usuario = String(req.body?.usuario || '').trim().toLowerCase();
   const nombre = String(req.body?.nombre || '').trim();
   const rol = req.body?.rol === 'admin' ? 'admin' : 'usuario';
@@ -21,17 +20,21 @@ router.post('/', (req, res) => {
     throw new HttpError(400, 'El usuario debe tener 3 a 30 caracteres: letras, números, punto, guion');
   }
   if (!nombre) throw new HttpError(400, 'El nombre es obligatorio');
-  if (db.prepare('SELECT 1 FROM usuarios WHERE usuario = ?').get(usuario)) {
+  if (await db.get('SELECT 1 FROM usuarios WHERE usuario = ?', usuario)) {
     throw new HttpError(400, 'Ese nombre de usuario ya existe');
   }
-  const info = db
-    .prepare('INSERT INTO usuarios (usuario, nombre, password_hash, rol, debe_cambiar_password) VALUES (?, ?, ?, ?, 1)')
-    .run(usuario, nombre, hashPassword(req.body?.password), rol);
-  res.status(201).json(usuarioPublico(obtener(info.lastInsertRowid)));
+  const info = await db.run(
+    'INSERT INTO usuarios (usuario, nombre, password_hash, rol, debe_cambiar_password) VALUES (?, ?, ?, ?, 1)',
+    usuario,
+    nombre,
+    hashPassword(req.body?.password),
+    rol
+  );
+  res.status(201).json(usuarioPublico(await obtener(info.lastInsertRowid)));
 });
 
-router.patch('/:id', (req, res) => {
-  const u = obtener(req.params.id);
+router.patch('/:id', async (req, res) => {
+  const u = await obtener(req.params.id);
   if (!u) throw new HttpError(404, 'Usuario no encontrado');
   const b = req.body || {};
   const nombre = b.nombre !== undefined ? String(b.nombre).trim() : u.nombre;
@@ -41,22 +44,21 @@ router.patch('/:id', (req, res) => {
   if (u.id === req.usuario.id && (!activo || rol !== 'admin')) {
     throw new HttpError(400, 'No puedes desactivarte ni quitarte el rol de administrador a ti mismo');
   }
-  if (u.rol === 'admin' && u.activo && (rol !== 'admin' || !activo) && totalAdminsActivos() <= 1) {
+  if (u.rol === 'admin' && u.activo && (rol !== 'admin' || !activo) && (await totalAdminsActivos()) <= 1) {
     throw new HttpError(400, 'Debe existir al menos un administrador activo');
   }
-  db.prepare(`UPDATE usuarios SET nombre = ?, rol = ?, activo = ?, actualizado_en = datetime('now') WHERE id = ?`).run(
+  if (b.password) hashPassword(b.password); // valida antes de guardar nada
+  await db.run(
+    `UPDATE usuarios SET nombre = ?, rol = ?, activo = ?, actualizado_en = datetime('now') WHERE id = ?`,
     nombre,
     rol,
     activo,
     u.id
   );
   if (b.password) {
-    db.prepare(`UPDATE usuarios SET password_hash = ?, debe_cambiar_password = 1 WHERE id = ?`).run(
-      hashPassword(b.password),
-      u.id
-    );
+    await db.run(`UPDATE usuarios SET password_hash = ?, debe_cambiar_password = 1 WHERE id = ?`, hashPassword(b.password), u.id);
   }
-  res.json(usuarioPublico(obtener(u.id)));
+  res.json(usuarioPublico(await obtener(u.id)));
 });
 
 module.exports = { router };

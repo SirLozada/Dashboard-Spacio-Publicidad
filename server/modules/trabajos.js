@@ -1,13 +1,10 @@
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
 const express = require('express');
-const multer = require('multer');
 const ExcelJS = require('exceljs');
 const { db } = require('../db');
 const config = require('../config');
 const { requiereAdmin } = require('../auth');
 const { HttpError, hoy, sumarDias, leerCampos, likeParam } = require('../lib/util');
+const almacen = require('../lib/almacen');
 
 const CAMPOS = {
   cliente: 'text',
@@ -26,9 +23,6 @@ const CAMPOS_FECHA = ['fecha_inicio', 'fecha_cotizacion', 'fecha_entrega'];
 const CERRADOS_SQL = config.ESTATUS_CERRADOS.map((e) => `'${e}'`).join(', ');
 const SIN_ALERTA_SQL = config.ESTATUS_SIN_ALERTA.map((e) => `'${e}'`).join(', ');
 
-const DIR_ADJUNTOS = path.join(config.DATA_DIR, 'adjuntos');
-fs.mkdirSync(DIR_ADJUNTOS, { recursive: true });
-
 const SELECT_TRABAJO = `
   SELECT t.*, (SELECT COUNT(*) FROM adjuntos a WHERE a.trabajo_id = t.id) AS total_adjuntos,
     (SELECT COUNT(*) FROM trabajo_pendientes p WHERE p.trabajo_id = t.id AND p.hecho = 0) AS total_pendientes,
@@ -37,7 +31,8 @@ const SELECT_TRABAJO = `
   FROM trabajos t`;
 
 const listarPendientes = (trabajoId) =>
-  db.prepare('SELECT * FROM trabajo_pendientes WHERE trabajo_id = ? ORDER BY hecho, orden, id').all(trabajoId);
+  db.all('SELECT * FROM trabajo_pendientes WHERE trabajo_id = ? ORDER BY hecho, orden, id', trabajoId);
+const listarAdjuntos = (trabajoId) => db.all('SELECT * FROM adjuntos WHERE trabajo_id = ? ORDER BY id', trabajoId);
 
 function validarEstatus(datos) {
   if ('estatus' in datos) {
@@ -47,7 +42,7 @@ function validarEstatus(datos) {
 }
 
 function obtener(id) {
-  return db.prepare(`${SELECT_TRABAJO} WHERE t.id = ?`).get(id);
+  return db.get(`${SELECT_TRABAJO} WHERE t.id = ?`, id);
 }
 
 // Construye la consulta filtrada; la usan el listado y la exportación a Excel.
@@ -98,70 +93,78 @@ function consultar(q) {
   };
   const orden = ordenes[q.orden] || ordenes.recientes;
   const sql = `${SELECT_TRABAJO} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${orden}`;
-  return db.prepare(sql).all(...params);
+  return db.all(sql, ...params);
 }
 
 // Crea un trabajo con número automático y, opcionalmente, su lista de pendientes.
 // También lo usa la importación desde Excel.
 function crearTrabajo(datos, pendientes = [], usuarioId = null) {
-  return db.transaction(() => {
-    const numero = db.prepare('SELECT COALESCE(MAX(numero), 0) + 1 FROM trabajos').pluck().get();
+  return db.transaction(async (tx) => {
+    const numero = await tx.value('SELECT COALESCE(MAX(numero), 0) + 1 FROM trabajos');
     const cols = Object.keys(datos);
-    const id = db
-      .prepare(
-        `INSERT INTO trabajos (numero, creado_por, actualizado_por, ${cols.join(', ')})
-         VALUES (?, ?, ?, ${cols.map(() => '?').join(', ')})`
-      )
-      .run(numero, usuarioId, usuarioId, ...cols.map((c) => datos[c])).lastInsertRowid;
-    const insertar = db.prepare('INSERT INTO trabajo_pendientes (trabajo_id, texto, orden) VALUES (?, ?, ?)');
-    pendientes
-      .map((p) => String(p ?? '').trim().slice(0, 500))
-      .filter(Boolean)
-      .forEach((texto, i) => insertar.run(id, texto, i));
+    const { lastInsertRowid: id } = await tx.run(
+      `INSERT INTO trabajos (numero, creado_por, actualizado_por, ${cols.join(', ')})
+       VALUES (?, ?, ?, ${cols.map(() => '?').join(', ')})`,
+      numero,
+      usuarioId,
+      usuarioId,
+      ...cols.map((c) => datos[c])
+    );
+    const textos = pendientes.map((p) => String(p ?? '').trim().slice(0, 500)).filter(Boolean);
+    for (const [i, texto] of textos.entries()) {
+      await tx.run('INSERT INTO trabajo_pendientes (trabajo_id, texto, orden) VALUES (?, ?, ?)', id, texto, i);
+    }
     return id;
-  })();
+  });
 }
 
 const router = express.Router();
 
-router.get('/', (req, res) => res.json(consultar(req.query)));
+router.get('/', async (req, res) => res.json(await consultar(req.query)));
 
-router.get('/resumen', (req, res) => {
-  const porEstatus = Object.fromEntries(config.ESTATUS_KEYS.map((k) => [k, 0]));
-  for (const r of db.prepare('SELECT estatus, COUNT(*) AS total FROM trabajos GROUP BY estatus').all()) {
-    porEstatus[r.estatus] = r.total;
-  }
+router.get('/resumen', async (req, res) => {
   const h = hoy();
-  const atrasados = db
-    .prepare(`SELECT COUNT(*) FROM trabajos WHERE estatus NOT IN (${SIN_ALERTA_SQL}) AND fecha_entrega < ?`)
-    .pluck()
-    .get(h);
-  const proximos = db
-    .prepare(`SELECT COUNT(*) FROM trabajos WHERE estatus NOT IN (${SIN_ALERTA_SQL}) AND fecha_entrega BETWEEN ? AND ?`)
-    .pluck()
-    .get(h, sumarDias(h, config.DIAS_ALERTA));
-  const activos = db.prepare(`SELECT COUNT(*) FROM trabajos WHERE estatus NOT IN (${CERRADOS_SQL})`).pluck().get();
-  res.json({ porEstatus, atrasados, proximos, activos, hoy: h });
-});
-
-// Valores ya usados, para autocompletar en los formularios.
-router.get('/sugerencias', (req, res) => {
-  const distintos = (col) =>
-    db
-      .prepare(`SELECT DISTINCT ${col} FROM trabajos WHERE ${col} IS NOT NULL AND ${col} <> '' ORDER BY ${col} COLLATE NOCASE`)
-      .pluck()
-      .all();
+  const [conteos, totales] = await Promise.all([
+    db.all('SELECT estatus, COUNT(*) AS total FROM trabajos GROUP BY estatus'),
+    db.get(
+      `SELECT
+         SUM(estatus NOT IN (${SIN_ALERTA_SQL}) AND fecha_entrega < ?) AS atrasados,
+         SUM(estatus NOT IN (${SIN_ALERTA_SQL}) AND fecha_entrega BETWEEN ? AND ?) AS proximos,
+         SUM(estatus NOT IN (${CERRADOS_SQL})) AS activos
+       FROM trabajos`,
+      h,
+      h,
+      sumarDias(h, config.DIAS_ALERTA)
+    ),
+  ]);
+  const porEstatus = Object.fromEntries(config.ESTATUS_KEYS.map((k) => [k, 0]));
+  for (const r of conteos) porEstatus[r.estatus] = r.total;
   res.json({
-    cliente: distintos('cliente'),
-    marca: distintos('marca'),
-    tienda: distintos('tienda'),
-    ubicacion: distintos('ubicacion'),
-    responsable: distintos('responsable'),
+    porEstatus,
+    atrasados: totales.atrasados || 0,
+    proximos: totales.proximos || 0,
+    activos: totales.activos || 0,
+    hoy: h,
   });
 });
 
+// Valores ya usados, para autocompletar en los formularios.
+router.get('/sugerencias', async (req, res) => {
+  const columnas = ['cliente', 'marca', 'tienda', 'ubicacion', 'responsable'];
+  const valores = await Promise.all(
+    columnas.map((col) =>
+      db.column(`SELECT DISTINCT ${col} FROM trabajos WHERE ${col} IS NOT NULL AND ${col} <> '' ORDER BY ${col} COLLATE NOCASE`)
+    )
+  );
+  res.json(Object.fromEntries(columnas.map((c, i) => [c, valores[i]])));
+});
+
 router.get('/exportar', async (req, res) => {
-  const filas = consultar(req.query);
+  const filas = await consultar(req.query);
+  const pendientesPorTrabajo = {};
+  for (const p of await db.all('SELECT trabajo_id, texto FROM trabajo_pendientes WHERE hecho = 0 ORDER BY orden, id')) {
+    (pendientesPorTrabajo[p.trabajo_id] ??= []).push(`• ${p.texto}`);
+  }
   const etiqueta = Object.fromEntries(config.ESTATUS.map((e) => [e.key, e]));
   const h = hoy();
   const limiteProximo = sumarDias(h, config.DIAS_ALERTA);
@@ -199,10 +202,7 @@ router.get('/exportar', async (req, res) => {
       fecha_inicio: aFecha(t.fecha_inicio),
       fecha_cotizacion: aFecha(t.fecha_cotizacion),
       fecha_entrega: aFecha(t.fecha_entrega),
-      pendientes: listarPendientes(t.id)
-        .filter((p) => !p.hecho)
-        .map((p) => `• ${p.texto}`)
-        .join('\n'),
+      pendientes: (pendientesPorTrabajo[t.id] || []).join('\n'),
       situacion,
     });
     const color = etiqueta[t.estatus]?.color?.replace('#', '');
@@ -229,145 +229,160 @@ router.get('/exportar', async (req, res) => {
   res.end();
 });
 
-router.get('/:id', (req, res) => {
-  const t = obtener(req.params.id);
+router.get('/:id', async (req, res) => {
+  const t = await obtener(req.params.id);
   if (!t) throw new HttpError(404, 'Trabajo no encontrado');
-  t.adjuntos = db.prepare('SELECT * FROM adjuntos WHERE trabajo_id = ? ORDER BY id').all(t.id);
-  t.pendientes = listarPendientes(t.id);
+  [t.adjuntos, t.pendientes] = await Promise.all([listarAdjuntos(t.id), listarPendientes(t.id)]);
   res.json(t);
 });
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   const datos = leerCampos(req.body, CAMPOS, { requeridos: ['cliente'] });
   if (datos.estatus === null) datos.estatus = 'por_cotizar';
   validarEstatus(datos);
   const pendientes = Array.isArray(req.body.pendientes) ? req.body.pendientes : [];
-  const id = crearTrabajo(datos, pendientes, req.usuario.id);
-  res.status(201).json(obtener(id));
+  const id = await crearTrabajo(datos, pendientes, req.usuario.id);
+  res.status(201).json(await obtener(id));
 });
 
-router.patch('/:id', (req, res) => {
-  if (!obtener(req.params.id)) throw new HttpError(404, 'Trabajo no encontrado');
+router.patch('/:id', async (req, res) => {
+  if (!(await obtener(req.params.id))) throw new HttpError(404, 'Trabajo no encontrado');
   const datos = leerCampos(req.body, CAMPOS, { parcial: true, requeridos: ['cliente'] });
   validarEstatus(datos);
   const cols = Object.keys(datos);
   if (cols.length) {
-    db.prepare(
-      `UPDATE trabajos SET ${cols.map((c) => `${c} = ?`).join(', ')}, actualizado_por = ?, actualizado_en = datetime('now') WHERE id = ?`
-    ).run(...cols.map((c) => datos[c]), req.usuario.id, req.params.id);
+    await db.run(
+      `UPDATE trabajos SET ${cols.map((c) => `${c} = ?`).join(', ')}, actualizado_por = ?, actualizado_en = datetime('now') WHERE id = ?`,
+      ...cols.map((c) => datos[c]),
+      req.usuario.id,
+      req.params.id
+    );
   }
-  res.json(obtener(req.params.id));
+  res.json(await obtener(req.params.id));
 });
 
-router.delete('/:id', requiereAdmin, (req, res) => {
-  const archivos = db.prepare('SELECT archivo FROM adjuntos WHERE trabajo_id = ?').pluck().all(req.params.id);
-  const info = db.prepare('DELETE FROM trabajos WHERE id = ?').run(req.params.id);
-  if (!info.changes) throw new HttpError(404, 'Trabajo no encontrado');
-  for (const a of archivos) fs.rm(path.join(DIR_ADJUNTOS, a), { force: true }, () => {});
+router.delete('/:id', requiereAdmin, async (req, res) => {
+  const id = req.params.id;
+  if (!(await obtener(id))) throw new HttpError(404, 'Trabajo no encontrado');
+  const archivos = await db.column('SELECT archivo FROM adjuntos WHERE trabajo_id = ?', id);
+  await db.transaction(async (tx) => {
+    await tx.run('DELETE FROM adjuntos WHERE trabajo_id = ?', id);
+    await tx.run('DELETE FROM trabajo_pendientes WHERE trabajo_id = ?', id);
+    await tx.run('DELETE FROM trabajos WHERE id = ?', id);
+  });
+  await Promise.all(archivos.map(almacen.borrar));
   res.json({ ok: true });
 });
 
 // ---- Pendientes (próximos pasos de cada trabajo) ----
 
 const tocarTrabajo = (trabajoId, usuarioId) =>
-  db.prepare(`UPDATE trabajos SET actualizado_por = ?, actualizado_en = datetime('now') WHERE id = ?`).run(usuarioId, trabajoId);
+  db.run(`UPDATE trabajos SET actualizado_por = ?, actualizado_en = datetime('now') WHERE id = ?`, usuarioId, trabajoId);
 
-router.post('/:id/pendientes', (req, res) => {
-  if (!obtener(req.params.id)) throw new HttpError(404, 'Trabajo no encontrado');
+router.post('/:id/pendientes', async (req, res) => {
+  if (!(await obtener(req.params.id))) throw new HttpError(404, 'Trabajo no encontrado');
   const texto = String(req.body?.texto ?? '').trim().slice(0, 500);
   if (!texto) throw new HttpError(400, 'Escribe el pendiente');
-  const orden = db
-    .prepare('SELECT COALESCE(MAX(orden), -1) + 1 FROM trabajo_pendientes WHERE trabajo_id = ?')
-    .pluck()
-    .get(req.params.id);
-  db.prepare('INSERT INTO trabajo_pendientes (trabajo_id, texto, orden) VALUES (?, ?, ?)').run(req.params.id, texto, orden);
-  tocarTrabajo(req.params.id, req.usuario.id);
-  res.status(201).json(listarPendientes(req.params.id));
+  await db.run(
+    `INSERT INTO trabajo_pendientes (trabajo_id, texto, orden)
+     VALUES (?, ?, (SELECT COALESCE(MAX(orden), -1) + 1 FROM trabajo_pendientes WHERE trabajo_id = ?))`,
+    req.params.id,
+    texto,
+    req.params.id
+  );
+  await tocarTrabajo(req.params.id, req.usuario.id);
+  res.status(201).json(await listarPendientes(req.params.id));
 });
 
 const pendientesRouter = express.Router();
 
-pendientesRouter.patch('/:id', (req, res) => {
-  const p = db.prepare('SELECT * FROM trabajo_pendientes WHERE id = ?').get(req.params.id);
+pendientesRouter.patch('/:id', async (req, res) => {
+  const p = await db.get('SELECT * FROM trabajo_pendientes WHERE id = ?', req.params.id);
   if (!p) throw new HttpError(404, 'Pendiente no encontrado');
   const texto = req.body?.texto !== undefined ? String(req.body.texto).trim().slice(0, 500) : p.texto;
   if (!texto) throw new HttpError(400, 'Escribe el pendiente');
   const hecho = req.body?.hecho !== undefined ? (req.body.hecho ? 1 : 0) : p.hecho;
-  db.prepare(
+  await db.run(
     `UPDATE trabajo_pendientes SET texto = ?, hecho = ?,
-       hecho_en = CASE WHEN ? = 1 THEN COALESCE(hecho_en, datetime('now')) ELSE NULL END WHERE id = ?`
-  ).run(texto, hecho, hecho, p.id);
-  tocarTrabajo(p.trabajo_id, req.usuario.id);
-  res.json(listarPendientes(p.trabajo_id));
+       hecho_en = CASE WHEN ? = 1 THEN COALESCE(hecho_en, datetime('now')) ELSE NULL END WHERE id = ?`,
+    texto,
+    hecho,
+    hecho,
+    p.id
+  );
+  await tocarTrabajo(p.trabajo_id, req.usuario.id);
+  res.json(await listarPendientes(p.trabajo_id));
 });
 
-pendientesRouter.delete('/:id', (req, res) => {
-  const p = db.prepare('SELECT * FROM trabajo_pendientes WHERE id = ?').get(req.params.id);
+pendientesRouter.delete('/:id', async (req, res) => {
+  const p = await db.get('SELECT * FROM trabajo_pendientes WHERE id = ?', req.params.id);
   if (!p) throw new HttpError(404, 'Pendiente no encontrado');
-  db.prepare('DELETE FROM trabajo_pendientes WHERE id = ?').run(p.id);
-  tocarTrabajo(p.trabajo_id, req.usuario.id);
-  res.json(listarPendientes(p.trabajo_id));
+  await db.run('DELETE FROM trabajo_pendientes WHERE id = ?', p.id);
+  await tocarTrabajo(p.trabajo_id, req.usuario.id);
+  res.json(await listarPendientes(p.trabajo_id));
 });
 
 // ---- Adjuntos (archivos y fotografías) ----
 
-const subida = multer({
-  storage: multer.diskStorage({
-    destination: DIR_ADJUNTOS,
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 10);
-      cb(null, `${crypto.randomUUID()}${ext}`);
-    },
-  }),
-  limits: { fileSize: config.MAX_ARCHIVO_MB * 1024 * 1024, files: 20 },
+const registrarAdjunto = (trabajoId, nombre, archivo, mime, tamano, usuarioId) =>
+  db.run(
+    'INSERT INTO adjuntos (trabajo_id, nombre_original, archivo, mime, tamano, subido_por) VALUES (?, ?, ?, ?, ?, ?)',
+    trabajoId,
+    String(nombre || 'archivo').slice(0, 255),
+    archivo,
+    mime || null,
+    Number(tamano) || null,
+    usuarioId
+  );
+
+// Modo local: el archivo llega al servidor (multipart/form-data).
+router.post('/:id/adjuntos', async (req, res) => {
+  if (almacen.MODO !== 'local') throw new HttpError(400, 'Las subidas se hacen directamente al almacenamiento');
+  if (!(await obtener(req.params.id))) throw new HttpError(404, 'Trabajo no encontrado');
+  await new Promise((resolve, reject) =>
+    almacen.subidaLocal()(req, res, (err) => {
+      if (!err) return resolve();
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? `Cada archivo debe pesar menos de ${config.MAX_ARCHIVO_MB} MB` : err.message;
+      reject(new HttpError(400, msg));
+    })
+  );
+  for (const f of req.files || []) {
+    // multer entrega el nombre original en latin1; se convierte a UTF-8 para conservar acentos.
+    const nombre = Buffer.from(f.originalname, 'latin1').toString('utf8');
+    await registrarAdjunto(req.params.id, nombre, f.filename, f.mimetype, f.size, req.usuario.id);
+  }
+  res.status(201).json(await listarAdjuntos(req.params.id));
 });
 
-router.post('/:id/adjuntos', (req, res, next) => {
-  if (!obtener(req.params.id)) throw new HttpError(404, 'Trabajo no encontrado');
-  subida.array('archivos', 20)(req, res, (err) => {
-    if (err) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? `Cada archivo debe pesar menos de ${config.MAX_ARCHIVO_MB} MB` : err.message;
-      return next(new HttpError(400, msg));
-    }
-    const insertar = db.prepare(
-      'INSERT INTO adjuntos (trabajo_id, nombre_original, archivo, mime, tamano, subido_por) VALUES (?, ?, ?, ?, ?, ?)'
-    );
-    db.transaction(() => {
-      for (const f of req.files || []) {
-        // multer entrega el nombre original en latin1; se convierte a UTF-8 para conservar acentos.
-        const nombre = Buffer.from(f.originalname, 'latin1').toString('utf8');
-        insertar.run(req.params.id, nombre, f.filename, f.mimetype, f.size, req.usuario.id);
-      }
-    })();
-    res.status(201).json(db.prepare('SELECT * FROM adjuntos WHERE trabajo_id = ? ORDER BY id').all(req.params.id));
-  });
+// Modo Vercel Blob: 1) el navegador pide permiso de subida, 2) sube el archivo
+// directamente a Blob y 3) registra el adjunto.
+router.post('/:id/adjuntos/permiso', async (req, res) => {
+  if (almacen.MODO !== 'blob') throw new HttpError(400, 'Almacenamiento Blob no configurado');
+  if (!(await obtener(req.params.id))) throw new HttpError(404, 'Trabajo no encontrado');
+  res.json(await almacen.tokenSubida(req, req.params.id));
+});
+
+router.post('/:id/adjuntos/registrar', async (req, res) => {
+  if (!(await obtener(req.params.id))) throw new HttpError(404, 'Trabajo no encontrado');
+  const { url, nombre, mime, tamano } = req.body || {};
+  if (!almacen.esUrlBlob(url)) throw new HttpError(400, 'Archivo no válido');
+  await registrarAdjunto(req.params.id, nombre, url, mime, tamano, req.usuario.id);
+  res.status(201).json(await listarAdjuntos(req.params.id));
 });
 
 const adjuntosRouter = express.Router();
 
-// Sólo imágenes (no SVG) y PDF se muestran en el navegador; el resto se descarga.
-const MIME_EN_LINEA = /^(image\/(png|jpe?g|gif|webp|avif|heic|heif|bmp)|application\/pdf)$/;
-
-adjuntosRouter.get('/:id', (req, res) => {
-  const a = db.prepare('SELECT * FROM adjuntos WHERE id = ?').get(req.params.id);
+adjuntosRouter.get('/:id', async (req, res) => {
+  const a = await db.get('SELECT * FROM adjuntos WHERE id = ?', req.params.id);
   if (!a) throw new HttpError(404, 'Archivo no encontrado');
-  const enLinea = MIME_EN_LINEA.test(a.mime || '') && req.query.descargar === undefined;
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'");
-  res.setHeader('Cache-Control', 'private, max-age=86400');
-  res.setHeader('Content-Type', enLinea ? a.mime : 'application/octet-stream');
-  res.setHeader(
-    'Content-Disposition',
-    `${enLinea ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(a.nombre_original)}`
-  );
-  res.sendFile(path.join(DIR_ADJUNTOS, a.archivo));
+  await almacen.enviar(req, res, a);
 });
 
-adjuntosRouter.delete('/:id', (req, res) => {
-  const a = db.prepare('SELECT * FROM adjuntos WHERE id = ?').get(req.params.id);
+adjuntosRouter.delete('/:id', async (req, res) => {
+  const a = await db.get('SELECT * FROM adjuntos WHERE id = ?', req.params.id);
   if (!a) throw new HttpError(404, 'Archivo no encontrado');
-  db.prepare('DELETE FROM adjuntos WHERE id = ?').run(a.id);
-  fs.rm(path.join(DIR_ADJUNTOS, a.archivo), { force: true }, () => {});
+  await db.run('DELETE FROM adjuntos WHERE id = ?', a.id);
+  await almacen.borrar(a.archivo);
   res.json({ ok: true });
 });
 

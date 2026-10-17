@@ -171,19 +171,23 @@ async function importarArchivo(ruta, { usuarioId = null } = {}) {
   const { db } = require('./db');
   const { crearTrabajo } = require('./modules/trabajos');
   const trabajos = await leerTrabajos(ruta);
-  const existe = db.prepare(
-    `SELECT 1 FROM trabajos WHERE cliente = ? COLLATE NOCASE
-       AND COALESCE(tienda, '') = ? COLLATE NOCASE AND COALESCE(descripcion, '') = ? COLLATE NOCASE`
-  );
+  const existe = (t) =>
+    db.get(
+      `SELECT 1 FROM trabajos WHERE cliente = ? COLLATE NOCASE
+         AND COALESCE(tienda, '') = ? COLLATE NOCASE AND COALESCE(descripcion, '') = ? COLLATE NOCASE`,
+      t.cliente,
+      t.tienda ?? '',
+      t.descripcion ?? ''
+    );
   let creados = 0;
   let omitidos = 0;
   for (const t of trabajos) {
-    if (existe.get(t.cliente, t.tienda ?? '', t.descripcion ?? '')) {
+    if (await existe(t)) {
       omitidos++;
       continue;
     }
     const { pendientes, estatusOriginal, ...datos } = t;
-    crearTrabajo(datos, pendientes, usuarioId);
+    await crearTrabajo(datos, pendientes, usuarioId);
     creados++;
   }
   return { archivo: path.basename(ruta), leidos: trabajos.length, creados, omitidos };
@@ -194,21 +198,22 @@ async function importarArchivo(ruta, { usuarioId = null } = {}) {
 async function importacionInicial() {
   const { db } = require('./db');
   const carpeta = process.env.CARPETA_IMPORTACION || path.join(__dirname, '..', 'datos-iniciales');
-  const hecha = db.prepare("SELECT valor FROM ajustes WHERE clave = 'importacion_inicial'").pluck().get();
-  if (hecha || !fs.existsSync(carpeta)) return;
-  const totalTrabajos = db.prepare('SELECT COUNT(*) FROM trabajos').pluck().get();
-  if (totalTrabajos === 0) {
-    const archivos = fs.readdirSync(carpeta).filter((f) => /\.xlsx$/i.test(f) && !f.startsWith('~$')).sort();
-    for (const f of archivos) {
-      try {
-        const r = await importarArchivo(path.join(carpeta, f));
-        console.log(`Importación inicial · ${r.archivo}: ${r.creados} trabajos creados`);
-      } catch (err) {
-        console.error(`No se pudo importar ${f}:`, err.message);
-      }
+  if (!fs.existsSync(carpeta)) return;
+  // La marca se guarda primero: si dos instancias arrancan a la vez, sólo una importa.
+  const marca = await db.run(
+    "INSERT OR IGNORE INTO ajustes (clave, valor) VALUES ('importacion_inicial', datetime('now'))"
+  );
+  if (!marca.changes) return;
+  if ((await db.value('SELECT COUNT(*) FROM trabajos')) > 0) return;
+  const archivos = fs.readdirSync(carpeta).filter((f) => /\.xlsx$/i.test(f) && !f.startsWith('~$')).sort();
+  for (const f of archivos) {
+    try {
+      const r = await importarArchivo(path.join(carpeta, f));
+      console.log(`Importación inicial · ${r.archivo}: ${r.creados} trabajos creados`);
+    } catch (err) {
+      console.error(`No se pudo importar ${f}:`, err.message);
     }
   }
-  db.prepare("INSERT OR REPLACE INTO ajustes (clave, valor) VALUES ('importacion_inicial', datetime('now'))").run();
 }
 
 module.exports = { leerTrabajos, importarArchivo, importacionInicial };
@@ -219,8 +224,8 @@ if (require.main === module) {
     console.log('Uso: npm run importar -- archivo.xlsx [otro.xlsx ...]');
     process.exit(1);
   }
-  require('./db').migrate();
   (async () => {
+    await require('./db').migrate();
     for (const a of archivos) {
       const r = await importarArchivo(path.resolve(a));
       console.log(`${r.archivo}: ${r.leidos} trabajos leídos, ${r.creados} creados, ${r.omitidos} omitidos (ya existían)`);
