@@ -6,11 +6,28 @@ const path = require('path');
 const { createClient } = require('@libsql/client');
 const { DATA_DIR } = require('./config');
 
+// Busca la conexión a Turso. La integración de Vercel puede crear las variables
+// con otro prefijo (p. ej. STORAGE_URL / STORAGE_AUTH_TOKEN), así que se acepta
+// cualquier variable cuyo valor sea una URL libsql://. Las URL de otras bases
+// (p. ej. postgres:// de Neon) se ignoran.
+function conexionTurso() {
+  if (process.env.TURSO_DATABASE_URL) {
+    return { url: process.env.TURSO_DATABASE_URL, authToken: process.env.TURSO_AUTH_TOKEN };
+  }
+  const nombre = Object.keys(process.env)
+    .sort()
+    .find((k) => /^libsql:\/\//i.test(process.env[k] || ''));
+  if (!nombre) return null;
+  const prefijo = nombre.replace(/_(DATABASE_)?URL$/i, '');
+  const token = [`${prefijo}_AUTH_TOKEN`, `${prefijo}_TOKEN`, `${prefijo}_DATABASE_AUTH_TOKEN`, 'TURSO_AUTH_TOKEN']
+    .map((k) => process.env[k])
+    .find(Boolean);
+  return { url: process.env[nombre], authToken: token };
+}
+
 function crearCliente() {
-  // Sólo se usa la variable de Turso: DATABASE_URL suele pertenecer a otras
-  // integraciones (p. ej. Neon/Postgres) y no debe tomarse por error.
-  const url = process.env.TURSO_DATABASE_URL;
-  if (url) return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
+  const turso = conexionTurso();
+  if (turso) return createClient(turso);
   // En Vercel el disco no es persistente: sin Turso no hay dónde guardar los datos.
   if (process.env.VERCEL) {
     const falta = () => {
