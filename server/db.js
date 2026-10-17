@@ -7,8 +7,10 @@ const { createClient } = require('@libsql/client');
 const { DATA_DIR } = require('./config');
 
 function crearCliente() {
-  const url = process.env.TURSO_DATABASE_URL || process.env.DATABASE_URL;
-  if (url) return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN || process.env.DATABASE_AUTH_TOKEN });
+  // Sólo se usa la variable de Turso: DATABASE_URL suele pertenecer a otras
+  // integraciones (p. ej. Neon/Postgres) y no debe tomarse por error.
+  const url = process.env.TURSO_DATABASE_URL;
+  if (url) return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN });
   // En Vercel el disco no es persistente: sin Turso no hay dónde guardar los datos.
   if (process.env.VERCEL) {
     const falta = () => {
