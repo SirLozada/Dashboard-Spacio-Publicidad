@@ -2,6 +2,8 @@
 // la tabla de trabajos y la ficha (detalle editable con autoguardado).
 import { api } from '../api.js';
 import { seccionPagosTrabajo } from './pagos-comun.js';
+import { subirArchivos } from './adjuntos.js';
+import { seccionSolicitudesTrabajo } from './solicitudes-comun.js';
 import { icon } from '../icons.js';
 import { state, numeroTrabajo, esAdmin, alternarEstatus, listaEstatus } from '../state.js';
 import {
@@ -180,53 +182,7 @@ function htmlAdjuntos(adjuntos) {
     .join('');
 }
 
-const nombreSeguro = (n) => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-').slice(-100);
-
-// Reduce las fotos grandes (máx. 2000 px, JPEG) antes de subirlas: se ven igual
-// en pantalla y ocupan mucho menos espacio en el almacenamiento gratuito.
-async function comprimirFoto(f) {
-  if (!/^image\/(jpeg|png|webp)$/.test(f.type) || f.size < 800 * 1024) return f;
-  try {
-    const img = await createImageBitmap(f);
-    const escala = Math.min(1, 2000 / Math.max(img.width, img.height));
-    const lienzo = document.createElement('canvas');
-    lienzo.width = Math.round(img.width * escala);
-    lienzo.height = Math.round(img.height * escala);
-    const ctx = lienzo.getContext('2d');
-    ctx.fillStyle = '#fff'; // fondo blanco para PNG con transparencia
-    ctx.fillRect(0, 0, lienzo.width, lienzo.height);
-    ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
-    const blob = await new Promise((ok) => lienzo.toBlob(ok, 'image/jpeg', 0.82));
-    if (!blob || blob.size >= f.size) return f;
-    return new File([blob], f.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
-  } catch {
-    return f;
-  }
-}
-
-// Sube archivos y devuelve la lista actualizada de adjuntos del trabajo.
-// En Vercel cada archivo va directo a Vercel Blob y luego se registra en la API.
-async function subirArchivos(id, archivos) {
-  archivos = await Promise.all(archivos.map(comprimirFoto));
-  if (state.config.subidas === 'blob') {
-    const { upload } = await import('/js/vendor/vercel-blob-client.js');
-    let adjuntos = [];
-    for (const f of archivos) {
-      const blob = await upload(`trabajos/${id}/${nombreSeguro(f.name)}`, f, {
-        access: state.config.accesoBlob,
-        handleUploadUrl: `/api/trabajos/${id}/adjuntos/permiso`,
-      });
-      adjuntos = await api(`/trabajos/${id}/adjuntos/registrar`, {
-        method: 'POST',
-        body: { url: blob.url, nombre: f.name, mime: f.type || blob.contentType, tamano: f.size },
-      });
-    }
-    return adjuntos;
-  }
-  const form = new FormData();
-  for (const f of archivos) form.append('archivos', f);
-  return api(`/trabajos/${id}/adjuntos`, { method: 'POST', form });
-}
+const subirAdjuntosTrabajo = (id, archivos) => subirArchivos({ ruta: `/trabajos/${id}/adjuntos`, carpeta: `trabajos/${id}`, archivos });
 
 // Abre la ficha de un trabajo existente (id) o de uno nuevo (id = null).
 export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
@@ -250,7 +206,14 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
   const m = modal({
     wide: true,
     titulo: titulo(),
-    body: `<form class="form-grid" novalidate>
+    body: `${
+      nuevo
+        ? ''
+        : `<nav class="tabs ficha-tabs" role="tablist">
+            <button type="button" class="activo" data-ficha-tab="datos">${icon('trabajos')}Datos del trabajo</button>
+            <button type="button" data-ficha-tab="solicitudes">${icon('mensaje')}Solicitudes y novedades <span class="tab-contador" hidden></span></button>
+          </nav><div data-ficha-panel="solicitudes" hidden></div>`
+    }<div data-ficha-panel="datos"><form class="form-grid" novalidate>
         ${camposFicha(sug).map((c) => campo(c, trabajo[c.name])).join('')}
       </form>
       <div class="section-title">${icon('check')} Pendientes</div>
@@ -268,7 +231,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
         <input type="file" multiple hidden>
       </label>
       <div class="files"></div>
-      ${nuevo ? '' : `<div class="meta-line">Creado ${fechaHora(trabajo.creado_en)} · Última actualización ${fechaHora(trabajo.actualizado_en)}</div>`}`,
+      ${nuevo ? '' : `<div class="meta-line">Creado ${fechaHora(trabajo.creado_en)} · Última actualización ${fechaHora(trabajo.actualizado_en)}</div>`}</div>`,
     foot: `${!nuevo && esAdmin() ? `<button class="btn btn-danger left" type="button" data-borrar>${icon('trash')}Eliminar</button>` : '<span class="left"></span>'}
       ${nuevo ? '' : '<span class="save-state saved">' + icon('check') + 'Los cambios se guardan automáticamente</span>'}
       ${nuevo ? '<button class="btn" data-close type="button">Cancelar</button><button class="btn btn-primary" data-crear type="button">' + icon('plus') + 'Crear trabajo</button>' : '<button class="btn btn-primary" data-close type="button">Listo</button>'}`,
@@ -286,6 +249,25 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
   const form = m.el.querySelector('form');
   const estado = m.el.querySelector('.save-state');
   const lista = m.el.querySelector('.files');
+  // Pestaña "Solicitudes y novedades" del proyecto.
+  const panelSolicitudes = m.el.querySelector('[data-ficha-panel=solicitudes]');
+  if (panelSolicitudes) {
+    const contadorTab = m.el.querySelector('.tab-contador');
+    seccionSolicitudesTrabajo(panelSolicitudes, trabajo, {
+      alContar: (n) => {
+        contadorTab.hidden = !n;
+        contadorTab.textContent = n;
+      },
+    }).catch((err) => {
+      panelSolicitudes.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
+    });
+    m.el.querySelectorAll('[data-ficha-tab]').forEach((b) =>
+      b.addEventListener('click', () => {
+        m.el.querySelectorAll('[data-ficha-tab]').forEach((x) => x.classList.toggle('activo', x === b));
+        m.el.querySelectorAll('[data-ficha-panel]').forEach((p) => (p.hidden = p.dataset.fichaPanel !== b.dataset.fichaTab));
+      })
+    );
+  }
   const contPagos = m.el.querySelector('.pagos-ficha');
   if (contPagos) {
     seccionPagosTrabajo(contPagos, trabajo).catch((err) => {
@@ -408,7 +390,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     e.currentTarget.disabled = true;
     try {
       const creado = await api('/trabajos', { method: 'POST', body: { ...datos, pendientes: pendientes.map((p) => p.texto) } });
-      if (archivosPorSubir.length) await subirArchivos(creado.id, archivosPorSubir);
+      if (archivosPorSubir.length) await subirAdjuntosTrabajo(creado.id, archivosPorSubir);
       sugerencias = null;
       huboCambios = true;
       toast(`Trabajo ${numeroTrabajo(creado.numero)} creado`);
@@ -451,7 +433,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     zona.classList.add('over');
     zona.querySelector('strong').textContent = 'Subiendo…';
     try {
-      trabajo.adjuntos = await subirArchivos(id, archivos);
+      trabajo.adjuntos = await subirAdjuntosTrabajo(id, archivos);
       lista.innerHTML = htmlAdjuntos(trabajo.adjuntos);
       huboCambios = true;
       toast(archivos.length === 1 ? 'Archivo adjuntado' : `${archivos.length} archivos adjuntados`);

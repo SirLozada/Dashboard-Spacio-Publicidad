@@ -73,19 +73,28 @@ router.delete('/:id', async (req, res) => {
   }
   const conPagos = await db.value(
     `SELECT 1 FROM abonos WHERE creado_por = ? UNION SELECT 1 FROM asignaciones WHERE creado_por = ?
-     UNION SELECT 1 FROM pagos_historial WHERE usuario_id = ? LIMIT 1`,
+     UNION SELECT 1 FROM pagos_historial WHERE usuario_id = ?
+     UNION SELECT 1 FROM solicitudes WHERE creado_por = ? OR aprobada_por = ?
+     UNION SELECT 1 FROM solicitud_comentarios WHERE usuario_id = ? LIMIT 1`,
+    u.id,
+    u.id,
+    u.id,
     u.id,
     u.id,
     u.id
   );
   if (conPagos) {
-    throw new HttpError(400, 'Este usuario registró pagos de producción y se conserva en el historial. Puedes desactivarlo para que no ingrese.');
+    throw new HttpError(400, 'Este usuario tiene pagos o solicitudes registradas y se conserva en el historial. Puedes desactivarlo para que no ingrese.');
   }
   await db.transaction(async (tx) => {
     await tx.run('UPDATE trabajos SET creado_por = NULL WHERE creado_por = ?', u.id);
     await tx.run('UPDATE trabajos SET actualizado_por = NULL WHERE actualizado_por = ?', u.id);
     await tx.run('UPDATE adjuntos SET subido_por = NULL WHERE subido_por = ?', u.id);
     await tx.run('UPDATE tasas_bcv SET registrada_por = NULL WHERE registrada_por = ?', u.id);
+    await tx.run('UPDATE solicitud_adjuntos SET subido_por = NULL WHERE subido_por = ?', u.id);
+    await tx.run('DELETE FROM solicitud_destinatarios WHERE usuario_id = ?', u.id);
+    await tx.run('DELETE FROM notificaciones WHERE usuario_id = ?', u.id);
+    await tx.run('UPDATE notificaciones SET actor_id = NULL WHERE actor_id = ?', u.id);
     await tx.run('DELETE FROM usuarios WHERE id = ?', u.id);
   });
   res.json({ ok: true });

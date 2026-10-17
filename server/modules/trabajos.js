@@ -261,6 +261,9 @@ router.delete('/:id', requiereAdmin, async (req, res) => {
   if (await db.value('SELECT 1 FROM asignaciones WHERE trabajo_id = ? LIMIT 1', id)) {
     throw new HttpError(400, 'No se puede eliminar: el trabajo tiene pagos de producción registrados');
   }
+  if (await db.value('SELECT 1 FROM solicitudes WHERE trabajo_id = ? LIMIT 1', id)) {
+    throw new HttpError(400, 'No se puede eliminar: el trabajo tiene solicitudes y novedades registradas (se conservan como historial)');
+  }
   const archivos = await db.column('SELECT archivo FROM adjuntos WHERE trabajo_id = ?', id);
   await db.transaction(async (tx) => {
     await tx.run('DELETE FROM adjuntos WHERE trabajo_id = ?', id);
@@ -356,7 +359,7 @@ router.post('/:id/adjuntos', async (req, res) => {
 router.post('/:id/adjuntos/permiso', async (req, res) => {
   if (almacen.MODO !== 'blob') throw new HttpError(400, 'Almacenamiento Blob no configurado');
   if (!(await obtener(req.params.id))) throw new HttpError(404, 'Trabajo no encontrado');
-  res.json(await almacen.tokenSubida(req, req.params.id));
+  res.json(await almacen.tokenSubida(req, `trabajos/${req.params.id}`));
 });
 
 router.post('/:id/adjuntos/registrar', async (req, res) => {

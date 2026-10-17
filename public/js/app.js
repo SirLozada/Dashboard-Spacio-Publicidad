@@ -8,10 +8,12 @@ import materiales from './modules/materiales.js';
 import proveedores from './modules/proveedores.js';
 import usuarios from './modules/usuarios.js';
 import pagos from './modules/pagos.js';
+import solicitudes from './modules/solicitudes.js';
+import { iniciarCampana, detenerCampana } from './components/notificaciones.js';
 
 // Registro de módulos del frontend. Para agregar un módulo nuevo basta con
 // crear su archivo en js/modules (con id, titulo, icono y render) y añadirlo aquí.
-const MODULOS = [dashboard, trabajos, pagos, materiales, proveedores, usuarios];
+const MODULOS = [dashboard, trabajos, solicitudes, pagos, materiales, proveedores, usuarios];
 
 const $ = (sel) => document.querySelector(sel);
 let limpiarVista = null;
@@ -64,6 +66,7 @@ async function navegar() {
 // ---------- Sesión ----------
 
 function mostrarLogin() {
+  detenerCampana();
   state.usuario = null;
   $('#app').hidden = true;
   $('#login').hidden = false;
@@ -83,6 +86,7 @@ async function iniciarApp() {
   $('#user-name').textContent = state.usuario.nombre;
   $('#user-role').textContent = state.usuario.rol === 'admin' ? 'Administrador' : 'Usuario';
   $('#user-avatar').textContent = state.usuario.nombre.trim().charAt(0).toUpperCase();
+  iniciarCampana();
   await navegar();
 }
 

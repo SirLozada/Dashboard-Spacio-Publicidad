@@ -9,6 +9,7 @@ const materiales = require('./modules/materiales');
 const proveedores = require('./modules/proveedores');
 const usuarios = require('./modules/usuarios');
 const pagos = require('./modules/pagos');
+const solicitudes = require('./modules/solicitudes');
 const almacen = require('./lib/almacen');
 const { importacionInicial } = require('./importar');
 
@@ -92,6 +93,9 @@ app.get('/api/config', privado, (req, res) => {
     estatusCerrados: config.ESTATUS_CERRADOS,
     estatusSinAlerta: config.ESTATUS_SIN_ALERTA,
     estatusAprobados: config.ESTATUS_APROBADOS,
+    solicitudTipos: config.SOLICITUD_TIPOS,
+    solicitudEstados: config.SOLICITUD_ESTADOS,
+    prioridades: config.PRIORIDADES,
     prefijoTrabajo: config.PREFIJO_TRABAJO,
     moneda: config.MONEDA,
     diasAlerta: config.DIAS_ALERTA,
@@ -111,6 +115,8 @@ const MODULOS = [
   { ruta: '/api/proveedores', router: proveedores.router },
   { ruta: '/api/usuarios', router: usuarios.router, soloAdmin: true },
   { ruta: '/api/pagos', router: pagos.router, soloAdmin: true },
+  { ruta: '/api/solicitudes', router: solicitudes.router },
+  { ruta: '/api/notificaciones', router: solicitudes.notificaciones },
 ];
 for (const m of MODULOS) {
   app.use(m.ruta, ...privado, ...(m.soloAdmin ? [auth.requiereAdmin] : []), m.router);

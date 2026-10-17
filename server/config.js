@@ -26,7 +26,36 @@ const ESTATUS_SIN_ALERTA = [...ESTATUS_CERRADOS, 'instalado'];
 // Sólo estos proyectos pueden recibir colaboradores en "Pagos de producción".
 const ESTATUS_APROBADOS = ['aprobado', 'produccion', 'instalado', 'reclamo', 'finalizado'];
 
+// Solicitudes y novedades
+const SOLICITUD_TIPOS = [
+  { key: 'observacion_cliente', label: 'Nueva observación del cliente' },
+  { key: 'modificacion', label: 'Modificación solicitada' },
+  { key: 'material_adicional', label: 'Solicitud de material adicional' },
+  { key: 'cambio_diseno', label: 'Cambio de diseño o render' },
+  { key: 'cambio_fecha', label: 'Cambio de fecha de entrega' },
+  { key: 'incidencia', label: 'Incidencia de producción' },
+  { key: 'informacion', label: 'Información adicional' },
+  { key: 'reclamo', label: 'Reclamo' },
+  { key: 'otro', label: 'Otro' },
+];
+const SOLICITUD_ESTADOS = [
+  { key: 'nueva', label: 'Nueva', color: '#2563eb', abierta: true },
+  { key: 'en_revision', label: 'En revisión', color: '#8b5cf6', abierta: true },
+  { key: 'pendiente_aprobacion', label: 'Pendiente de aprobación', color: '#d97706', abierta: true },
+  { key: 'en_proceso', label: 'En proceso', color: '#0ea5e9', abierta: true },
+  { key: 'resuelta', label: 'Resuelta', color: '#16a34a', abierta: false },
+  { key: 'rechazada', label: 'Rechazada', color: '#78716c', abierta: false },
+];
+const PRIORIDADES = [
+  { key: 'normal', label: 'Normal', color: '#64748b' },
+  { key: 'alta', label: 'Alta', color: '#d97706' },
+  { key: 'urgente', label: 'Urgente', color: '#dc2626' },
+];
+
 module.exports = {
+  SOLICITUD_TIPOS,
+  SOLICITUD_ESTADOS,
+  PRIORIDADES,
   PORT: Number(process.env.PORT) || 3000,
   DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
   NODE_ENV: process.env.NODE_ENV || 'development',

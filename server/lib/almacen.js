@@ -34,13 +34,14 @@ function subidaLocal() {
 }
 
 // Responde a la librería @vercel/blob/client generando el permiso de subida.
-async function tokenSubida(req, trabajoId) {
+// carpeta: prefijo obligatorio de la ruta del archivo, p. ej. "trabajos/5".
+async function tokenSubida(req, carpeta) {
   const { handleUpload } = require('@vercel/blob/client');
   return handleUpload({
     body: req.body,
     request: req,
     onBeforeGenerateToken: async (pathname) => {
-      if (!pathname.startsWith(`trabajos/${trabajoId}/`)) throw new HttpError(400, 'Ruta de archivo no válida');
+      if (!pathname.startsWith(`${carpeta}/`)) throw new HttpError(400, 'Ruta de archivo no válida');
       return { addRandomSuffix: true, maximumSizeInBytes: MAX_BYTES };
     },
   });
