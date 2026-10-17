@@ -133,7 +133,13 @@ router.put('/:id', async (req, res) => {
   const b = req.body || {};
   const estado = ESTADOS.includes(b.estado) ? b.estado : 'borrador';
   const comisiones = (Array.isArray(b.comisiones) ? b.comisiones : [])
-    .map((c) => ({ nombre: t(c.nombre, 60) || 'Comisión', porcentaje: fraccion(c.porcentaje, 0) }))
+    .map((c) => {
+      const nombre = t(c.nombre, 60) || 'Comisión';
+      if (c.tipo !== 'monto') return { nombre, porcentaje: fraccion(c.porcentaje, 0) };
+      const monto = n(c.monto, 0);
+      if (monto < 0) throw new HttpError(400, 'El monto de una comisión no puede ser negativo');
+      return { nombre, tipo: 'monto', monto };
+    })
     .slice(0, 10);
   const piezas = (Array.isArray(b.piezas) ? b.piezas : []).slice(0, 100);
   const viaticos = (Array.isArray(b.viaticos) ? b.viaticos : []).slice(0, 200);
@@ -410,16 +416,25 @@ router.get('/:id/excel', async (req, res) => {
     h.addRow([]);
   }
 
+  if (k.comisiones_monto.length) {
+    titulo('COMISIONES EN MONTO (incluidas en el precio, no se muestran al cliente)');
+    for (const x of k.comisiones_monto) etiqueta(`COMISIÓN ${x.nombre.toUpperCase()}`, x.monto);
+    h.addRow([]);
+  }
+
+  // Con comisiones en monto se agrega su columna antes del total.
+  const conMonto = k.comisiones_monto.length > 0;
   titulo('RESUMEN DE LA COTIZACIÓN');
-  encabezado(['PIEZA', 'CANTIDAD', 'FABRICACIÓN', '% VIÁTICOS', 'VIÁTICOS', 'TOTAL']);
+  encabezado(['PIEZA', 'CANTIDAD', 'FABRICACIÓN', '% VIÁTICOS', 'VIÁTICOS', ...(conMonto ? ['COMISIONES EN MONTO'] : []), 'TOTAL']);
+  const columnasUsd = conMonto ? [3, 5, 6, 7] : [3, 5, 6];
   k.piezas.forEach((p) => {
-    const r = h.addRow([p.nombre, p.cantidad, p.fabricacion, p.viaticos_pct, p.viaticos, p.total]);
-    [3, 5, 6].forEach((col) => (r.getCell(col).numFmt = usd));
+    const r = h.addRow([p.nombre, p.cantidad, p.fabricacion, p.viaticos_pct, p.viaticos, ...(conMonto ? [p.comision_monto] : []), p.total]);
+    columnasUsd.forEach((col) => (r.getCell(col).numFmt = usd));
     r.getCell(4).numFmt = pct;
   });
-  const tot = h.addRow(['COTIZACIÓN TOTAL', '', k.fabricacion, '', k.viaticos, k.total]);
+  const tot = h.addRow(['COTIZACIÓN TOTAL', '', k.fabricacion, '', k.viaticos, ...(conMonto ? [k.comision_monto] : []), k.total]);
   tot.font = { bold: true };
-  [3, 5, 6].forEach((col) => (tot.getCell(col).numFmt = usd));
+  columnasUsd.forEach((col) => (tot.getCell(col).numFmt = usd));
   for (const a of k.avisos) h.addRow([`⚠ ${a}`]).font = { color: { argb: 'FFB45309' } };
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

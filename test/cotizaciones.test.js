@@ -151,3 +151,25 @@ test('los textos del documento del cliente se corrigen sobre el mismo documento'
   assert.strictEqual(c.datos.piezas[1].nombre, 'Pieza 2');
   assert.strictEqual(c.datos.condiciones, '60 % de anticipo');
 });
+
+test('comisión en monto fijo: se suma al total sin aparecer como concepto para el cliente', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'CLIENTE MONTO', descripcion: 'Prueba' } });
+  const nueva = await pedir('/cotizaciones', { method: 'POST', body: { trabajo_id: t.datos.id } });
+  const base = await pedir(`/cotizaciones/${nueva.datos.id}`, {
+    method: 'PUT',
+    body: { ...nueva.datos, piezas: [{ nombre: 'Pieza 1', cantidad: 1, lineas: L([['MDF', 1, 300]]) }, { nombre: 'Pieza 2', cantidad: 2, lineas: L([['MDF', 1, 100]]) }] },
+  });
+  const x = base.datos.calculo.total;
+  const con = await pedir(`/cotizaciones/${nueva.datos.id}`, {
+    method: 'PUT',
+    body: { ...base.datos, comisiones: [...base.datos.comisiones, { nombre: 'Francisco', tipo: 'monto', monto: 1000 }] },
+  });
+  const k = con.datos.calculo;
+  assert.strictEqual(k.total.toFixed(2), (x + 1000).toFixed(2));
+  assert.strictEqual((k.piezas[0].comision_monto + k.piezas[1].comision_monto).toFixed(2), '1000.00');
+  assert.deepStrictEqual(con.datos.comisiones.at(-1), { nombre: 'Francisco', tipo: 'monto', monto: 1000 });
+  const doc = await pedir(`/cotizaciones/${nueva.datos.id}/cliente`);
+  assert.doesNotMatch(doc.datos, /Francisco/);
+  const excel = await pedir(`/cotizaciones/${nueva.datos.id}/excel`);
+  assert.strictEqual(excel.status, 200);
+});

@@ -112,21 +112,24 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
   }
 
   function htmlResumen(k) {
+    const conMonto = k.comisiones_monto.length > 0;
+    const celdaMonto = (v) => (conMonto ? `<td class="right">${usd(v)}</td>` : '');
     return `<div class="table-wrap"><table class="data cot-tabla">
-      <thead><tr><th>Pieza</th><th class="right">Cant.</th><th class="right">Fabricación</th><th class="right">% viáticos</th><th class="right">Viáticos</th><th class="right">Total</th><th class="right">Precio unit. cliente</th></tr></thead>
+      <thead><tr><th>Pieza</th><th class="right">Cant.</th><th class="right">Fabricación</th><th class="right">% viáticos</th><th class="right">Viáticos</th>${conMonto ? '<th class="right">Comisiones en monto</th>' : ''}<th class="right">Total</th><th class="right">Precio unit. cliente</th></tr></thead>
       <tbody>${k.piezas
         .map(
           (p) => `<tr class="sin-clic"><td>${esc(p.nombre)}</td><td class="right">${aTexto(p.cantidad)}</td><td class="right">${usd(p.fabricacion)}</td>
-            <td class="right">${pctTxt(p.viaticos_pct)}</td><td class="right">${usd(p.viaticos)}</td>
+            <td class="right">${pctTxt(p.viaticos_pct)}</td><td class="right">${usd(p.viaticos)}</td>${celdaMonto(p.comision_monto)}
             <td class="right num">${usd(p.total)}</td><td class="right">${usd(p.precio_unitario_cliente)}</td></tr>`
         )
         .join('')}</tbody>
-      <tfoot><tr><td>TOTAL</td><td></td><td class="right">${usd(k.fabricacion)}</td><td></td><td class="right">${usd(k.viaticos)}</td><td class="right num">${usd(k.total)}</td><td></td></tr></tfoot>
+      <tfoot><tr><td>TOTAL</td><td></td><td class="right">${usd(k.fabricacion)}</td><td></td><td class="right">${usd(k.viaticos)}</td>${celdaMonto(k.comision_monto)}<td class="right num">${usd(k.total)}</td><td></td></tr></tfoot>
     </table></div>
     <div class="cot-desglose">
       <div><small>Costo total</small><strong>${usd(k.costo_fabricacion + k.costo_viaticos)}</strong></div>
       ${k.pasos.map((p) => `<div><small>${esc(p.nombre)} (${pctTxt(p.porcentaje)})</small><strong>${usd(p.monto)}</strong></div>`).join('')}
       <div><small>Ganancia viáticos</small><strong>${usd(k.ganancia_viaticos)}</strong></div>
+      ${k.comisiones_monto.map((x) => `<div><small>${esc(x.nombre)} (monto fijo)</small><strong>${usd(x.monto)}</strong></div>`).join('')}
       <div class="total"><small>Cotización total</small><strong>${usd(k.total)}</strong></div>
     </div>
     ${k.avisos.map((a) => `<p class="aviso-cot">${icon('alert')} ${esc(a)}</p>`).join('')}`;
@@ -183,15 +186,23 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
           <label class="field"><span>Margen de ganancia (%)</span>${campoNum('data-campo="margen" data-pct', doc.margen * 100)}</label>
           ${doc.comisiones
             .map(
-              (c, i) => `<div class="field cot-comision"><span>Comisión (%)</span><div class="input-con-boton">
+              (c, i) => `<div class="field cot-comision"><span>${c.tipo === 'monto' ? 'Comisión en monto ($)' : 'Comisión (%)'}</span><div class="input-con-boton">
                 ${campoTxt(`data-comision="${i}" data-campo="nombre"`, c.nombre, 'placeholder="Nombre" style="flex:1.4"')}
-                ${campoNum(`data-comision="${i}" data-campo="porcentaje" data-pct`, c.porcentaje * 100, 'style="flex:1"')}
+                ${
+                  c.tipo === 'monto'
+                    ? campoNum(`data-comision="${i}" data-campo="monto"`, c.monto, 'style="flex:1"')
+                    : campoNum(`data-comision="${i}" data-campo="porcentaje" data-pct`, c.porcentaje * 100, 'style="flex:1"')
+                }
                 ${botonPapelera(`data-accion="quitar-comision" data-comision="${i}"`, 'Quitar comisión')}</div></div>`
             )
             .join('')}
-          <div class="field"><span>&nbsp;</span><button class="btn" type="button" data-accion="agregar-comision">${icon('plus')}Agregar comisión (%)</button></div>
+          <div class="field"><span>&nbsp;</span><div class="cot-botones-comision">
+            <button class="btn" type="button" data-accion="agregar-comision">${icon('plus')}Agregar comisión (%)</button>
+            <button class="btn" type="button" data-accion="agregar-comision-monto">${icon('plus')}Agregar comisión en monto ($)</button>
+          </div></div>
         </div>
-        <p class="muted nota">Se aplica como en el Excel: costo ÷ (1 − margen) y luego ÷ (1 − cada comisión), en el orden indicado.</p>
+        <p class="muted nota">Se aplica como en el Excel: costo ÷ (1 − margen) y luego ÷ (1 − cada comisión), en el orden indicado.
+          Las comisiones en monto se suman al final y quedan dentro del precio de las piezas: el cliente no las ve como concepto.</p>
       </section>
 
       <section class="cot-seccion">
@@ -359,6 +370,9 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
         break;
       case 'agregar-comision':
         doc.comisiones.push({ nombre: '', porcentaje: 0 });
+        break;
+      case 'agregar-comision-monto':
+        doc.comisiones.push({ nombre: '', tipo: 'monto', monto: 0 });
         break;
       case 'quitar-comision':
         doc.comisiones.splice(j, 1);
