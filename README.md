@@ -12,6 +12,7 @@ computadora y teléfono, con la información guardada en una base de datos.
 | **Control de trabajos** | Registro con número automático (`SP-0001`…), cambio rápido de estatus desde la tabla, búsqueda (cliente, marca, tienda, descripción, N°), filtros por estatus y rango de fechas, orden por fecha de entrega, trabajos atrasados resaltados, ficha completa con **guardado automático**, lista de **pendientes** por trabajo (próximos pasos que se marcan al completarlos), archivos y fotografías adjuntos, y **exportación a Excel** (respeta los filtros aplicados). |
 | **Materiales y precios** | Agregar, editar, eliminar y buscar materiales. Al cambiar un precio se registra la fecha de actualización. |
 | **Proveedores** | Directorio con búsqueda y botones para llamar o escribir por WhatsApp. |
+| **Pagos de producción** (administradores) | Pagos por proyecto a colaboradores: directorio de colaboradores, asignación a trabajos con monto acordado en USD, abonos en USD o Bs con la tasa BCV de la fecha del pago, estados automáticos (Pendiente / Pago parcial / Completado), ajustes y anulaciones identificables con historial, resumen semanal exportable a Excel y sección de pagos en la ficha de cada trabajo. |
 | **Usuarios** (administradores) | Agregar usuarios, restablecer contraseñas y desactivar accesos. |
 
 Estatus de trabajo: Por cotizar, Render, Pendiente por aprobación, Aprobado,
@@ -28,6 +29,18 @@ deben cambiar su contraseña inicial.
 
 - **Administrador:** todo, además de gestionar usuarios y eliminar trabajos/proveedores.
 - **Usuario:** registrar, consultar y editar trabajos, materiales y proveedores.
+
+## Tasa oficial BCV (Pagos de producción)
+
+- La tasa se lee de **bcv.org.ve** junto con su *fecha valor* y se guarda en la tabla `tasas_bcv`.
+  Vercel la consulta dos veces al día (`crons` en `vercel.json`) y también al registrar un pago.
+- La tasa de un pago es la de mayor fecha valor que no supere la fecha del pago: los fines de semana
+  y feriados usan la última tasa vigente.
+- Si no hay una tasa verificada (p. ej. un pago antiguo o el BCV no responde), el sistema **no la inventa**:
+  pide ingresarla manualmente con confirmación y la marca como *manual*. DolarApi se muestra sólo como
+  referencia porque no indica la fecha valor.
+- Cada abono guarda su tasa, el monto en USD y en Bs: cambios posteriores de la tasa no lo modifican.
+- Los abonos nunca se editan ni se borran; los errores se corrigen con ajustes que quedan en el historial.
 
 ## Importar los Excel anteriores
 

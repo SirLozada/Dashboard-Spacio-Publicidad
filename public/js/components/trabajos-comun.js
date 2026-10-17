@@ -1,6 +1,7 @@
 // Piezas compartidas entre el Dashboard y Control de trabajos:
 // la tabla de trabajos y la ficha (detalle editable con autoguardado).
 import { api } from '../api.js';
+import { seccionPagosTrabajo } from './pagos-comun.js';
 import { icon } from '../icons.js';
 import { state, numeroTrabajo, esAdmin, alternarEstatus, listaEstatus } from '../state.js';
 import {
@@ -248,6 +249,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
         <input class="input" name="texto" placeholder="Agregar pendiente (ej. Presupuesto proveedor, Artes finales…)" autocomplete="off" maxlength="500">
         <button class="btn" type="submit">${icon('plus')}Agregar</button>
       </form>
+      ${!nuevo && esAdmin() ? '<div class="pagos-ficha"></div>' : ''}
       <div class="section-title">${icon('clip')} Archivos y fotografías</div>
       <label class="dropzone">
         ${icon('upload')}
@@ -274,6 +276,12 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
   const form = m.el.querySelector('form');
   const estado = m.el.querySelector('.save-state');
   const lista = m.el.querySelector('.files');
+  const contPagos = m.el.querySelector('.pagos-ficha');
+  if (contPagos) {
+    seccionPagosTrabajo(contPagos, trabajo).catch((err) => {
+      contPagos.innerHTML = `<p class="form-error">${esc(err.message)}</p>`;
+    });
+  }
   const entrada = m.el.querySelector('input[type=file]');
   const zona = m.el.querySelector('.dropzone');
   lista.innerHTML = htmlAdjuntos(trabajo.adjuntos);

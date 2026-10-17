@@ -236,6 +236,60 @@ table.data tr.soon td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 .file:hover .del { opacity: 1; }
 .file .del svg { width: 14px; height: 14px; }
 
+/* ---------- Pagos de producción ---------- */
+.tabs { display: flex; gap: 4px; margin-bottom: 18px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.tabs button { display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px; border: 0; border-bottom: 3px solid transparent; background: none; cursor: pointer; font-weight: 600; color: var(--text-2); white-space: nowrap; margin-bottom: -1px; }
+.tabs button:hover { color: var(--text); }
+.tabs button.activo { color: var(--primary); border-bottom-color: var(--primary); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(165px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.kpis-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); display: grid; gap: 2px; min-width: 0; }
+.kpi small { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.kpi strong { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.kpi span { font-size: 12px; color: var(--text-3); }
+.kpi-alerta { border-left: 4px solid #d97706; }
+.kpi-ok { border-left: 4px solid var(--success); }
+.kpis-compactos { margin-bottom: 12px; }
+.kpis-compactos .kpi { padding: 10px 12px; box-shadow: none; }
+.kpis-compactos .kpi strong { font-size: 18px; }
+.texto-saldo { color: #b45309; }
+.texto-error { color: var(--danger); display: inline-flex; gap: 5px; align-items: center; }
+.texto-error svg { width: 15px; height: 15px; }
+table.data tr.sin-clic { cursor: default; }
+table.data tr.anulado td { color: var(--text-3); text-decoration: line-through; }
+table.data tr.anulado td small { text-decoration: none; }
+.section-title .section-action { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.historial-pagos { margin-top: 12px; }
+.historial-pagos summary { cursor: pointer; font-weight: 600; color: var(--primary); padding: 6px 0; }
+.historial { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.historial li { padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius-sm); }
+.dato { padding: 9px 11px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.input-con-boton { display: flex; gap: 8px; }
+.input-con-boton select { flex: 1; min-width: 0; }
+.segmentado { display: flex; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; min-height: 40px; }
+.segmentado button { flex: 1; border: 0; background: var(--surface); cursor: pointer; font-weight: 600; color: var(--text-2); padding: 8px; }
+.segmentado button + button { border-left: 1px solid var(--border-strong); }
+.segmentado button.activo { background: var(--primary); color: #fff; }
+.tasa-box { padding: 12px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); display: grid; gap: 6px; font-size: 14px; }
+.tasa-box > div:first-child { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.tasa-box small { color: var(--text-2); }
+.tasa-box.ok { background: #f0fdf4; border-color: #bbf7d0; }
+.tasa-box.ok > div:first-child svg { color: var(--success); }
+.tasa-box.aviso { background: var(--warning-soft); border-color: #fde68a; }
+.tasa-box.aviso > div:first-child svg { color: var(--warning); }
+.tasa-manual { display: grid; gap: 8px; margin-top: 4px; }
+.sugerencia { font-size: 13px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; cursor: pointer; }
+.check input { margin-top: 2px; width: 16px; height: 16px; flex: none; }
+.saldo-box { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.saldo-box > div { background: var(--surface-2); border-radius: var(--radius-sm); padding: 8px 10px; display: grid; }
+.saldo-box > div.muted { grid-column: 1 / -1; }
+.saldo-box small { font-size: 12px; color: var(--text-2); font-weight: 600; }
+.saldo-box strong { font-variant-numeric: tabular-nums; }
+.saldo-box .saldo { color: #b45309; }
+.calculo { font-size: 13.5px; min-height: 18px; }
+.nota { margin: 0; font-size: 13px; }
+
 /* ---------- Toasts ---------- */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 80; display: grid; gap: 8px; }
 .toast { background: var(--sidebar); color: #fff; padding: 11px 16px; border-radius: 9px; box-shadow: var(--shadow-lg); font-size: 14px; max-width: 360px; animation: pop .2s ease; }
@@ -257,6 +311,9 @@ table.data tr.soon td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 
 @media (max-width: 720px) {
   .form-grid { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpis-3, .saldo-box { grid-template-columns: 1fr; }
+  .kpi strong { font-size: 19px; }
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .stat-card { padding: 12px 13px; }
   .stat-card .value { font-size: 24px; }

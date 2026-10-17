@@ -8,6 +8,7 @@ const trabajos = require('./modules/trabajos');
 const materiales = require('./modules/materiales');
 const proveedores = require('./modules/proveedores');
 const usuarios = require('./modules/usuarios');
+const pagos = require('./modules/pagos');
 const almacen = require('./lib/almacen');
 const { importacionInicial } = require('./importar');
 
@@ -79,6 +80,8 @@ app.use('/api', async (req, res, next) => {
 
 app.get('/api/salud', (req, res) => res.json({ ok: true }));
 app.use('/api/auth', auth.router);
+// Actualización diaria de la tasa BCV (Vercel Cron, ver vercel.json).
+app.get(['/api/tasa-bcv/cron', '/api/tasa-bcv/cron-tarde'], pagos.cronTasa);
 
 // Todo lo que sigue requiere sesión iniciada.
 const privado = [auth.requiereSesion, auth.exigeCambioPassword];
@@ -106,6 +109,7 @@ const MODULOS = [
   { ruta: '/api/materiales', router: materiales.router },
   { ruta: '/api/proveedores', router: proveedores.router },
   { ruta: '/api/usuarios', router: usuarios.router, soloAdmin: true },
+  { ruta: '/api/pagos', router: pagos.router, soloAdmin: true },
 ];
 for (const m of MODULOS) {
   app.use(m.ruta, ...privado, ...(m.soloAdmin ? [auth.requiereAdmin] : []), m.router);

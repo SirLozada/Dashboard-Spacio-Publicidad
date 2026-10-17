@@ -10,5 +10,20 @@
       "includeFiles": "{server/migrations/**,datos-iniciales/**}"
     }
   },
-  "rewrites": [{ "source": "/api/:ruta*", "destination": "/api" }]
+  "rewrites": [
+    {
+      "source": "/api/:ruta*",
+      "destination": "/api"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/tasa-bcv/cron",
+      "schedule": "5 13 * * *"
+    },
+    {
+      "path": "/api/tasa-bcv/cron-tarde",
+      "schedule": "5 22 * * *"
+    }
+  ]
 }

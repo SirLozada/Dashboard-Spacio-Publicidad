@@ -7,10 +7,11 @@ import trabajos from './modules/trabajos.js';
 import materiales from './modules/materiales.js';
 import proveedores from './modules/proveedores.js';
 import usuarios from './modules/usuarios.js';
+import pagos from './modules/pagos.js';
 
 // Registro de módulos del frontend. Para agregar un módulo nuevo basta con
 // crear su archivo en js/modules (con id, titulo, icono y render) y añadirlo aquí.
-const MODULOS = [dashboard, trabajos, materiales, proveedores, usuarios];
+const MODULOS = [dashboard, trabajos, pagos, materiales, proveedores, usuarios];
 
 const $ = (sel) => document.querySelector(sel);
 let limpiarVista = null;

@@ -258,6 +258,9 @@ router.patch('/:id', async (req, res) => {
 router.delete('/:id', requiereAdmin, async (req, res) => {
   const id = req.params.id;
   if (!(await obtener(id))) throw new HttpError(404, 'Trabajo no encontrado');
+  if (await db.value('SELECT 1 FROM asignaciones WHERE trabajo_id = ? LIMIT 1', id)) {
+    throw new HttpError(400, 'No se puede eliminar: el trabajo tiene pagos de producción registrados');
+  }
   const archivos = await db.column('SELECT archivo FROM adjuntos WHERE trabajo_id = ?', id);
   await db.transaction(async (tx) => {
     await tx.run('DELETE FROM adjuntos WHERE trabajo_id = ?', id);
