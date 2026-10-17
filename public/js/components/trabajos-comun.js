@@ -113,9 +113,32 @@ function htmlAdjuntos(adjuntos) {
 
 const nombreSeguro = (n) => n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w.-]+/g, '-').slice(-100);
 
+// Reduce las fotos grandes (máx. 2000 px, JPEG) antes de subirlas: se ven igual
+// en pantalla y ocupan mucho menos espacio en el almacenamiento gratuito.
+async function comprimirFoto(f) {
+  if (!/^image\/(jpeg|png|webp)$/.test(f.type) || f.size < 800 * 1024) return f;
+  try {
+    const img = await createImageBitmap(f);
+    const escala = Math.min(1, 2000 / Math.max(img.width, img.height));
+    const lienzo = document.createElement('canvas');
+    lienzo.width = Math.round(img.width * escala);
+    lienzo.height = Math.round(img.height * escala);
+    const ctx = lienzo.getContext('2d');
+    ctx.fillStyle = '#fff'; // fondo blanco para PNG con transparencia
+    ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+    ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+    const blob = await new Promise((ok) => lienzo.toBlob(ok, 'image/jpeg', 0.82));
+    if (!blob || blob.size >= f.size) return f;
+    return new File([blob], f.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch {
+    return f;
+  }
+}
+
 // Sube archivos y devuelve la lista actualizada de adjuntos del trabajo.
 // En Vercel cada archivo va directo a Vercel Blob y luego se registra en la API.
 async function subirArchivos(id, archivos) {
+  archivos = await Promise.all(archivos.map(comprimirFoto));
   if (state.config.subidas === 'blob') {
     const { upload } = await import('/js/vendor/vercel-blob-client.js');
     let adjuntos = [];
