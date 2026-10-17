@@ -109,21 +109,20 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
 
   function htmlResumen(k) {
     return `<div class="table-wrap"><table class="data cot-tabla">
-      <thead><tr><th>Pieza</th><th class="right">Cant.</th><th class="right">Fabricación</th><th class="right">% viáticos</th><th class="right">Viáticos</th><th class="right">${esc(doc.comision_fija_nombre || 'Comisión en monto')}</th><th class="right">Total</th><th class="right">Precio unit. cliente</th></tr></thead>
+      <thead><tr><th>Pieza</th><th class="right">Cant.</th><th class="right">Fabricación</th><th class="right">% viáticos</th><th class="right">Viáticos</th><th class="right">Total</th><th class="right">Precio unit. cliente</th></tr></thead>
       <tbody>${k.piezas
         .map(
           (p) => `<tr class="sin-clic"><td>${esc(p.nombre)}</td><td class="right">${aTexto(p.cantidad)}</td><td class="right">${usd(p.fabricacion)}</td>
-            <td class="right">${pctTxt(p.viaticos_pct)}</td><td class="right">${usd(p.viaticos)}</td><td class="right">${usd(p.comision_fija)}</td>
+            <td class="right">${pctTxt(p.viaticos_pct)}</td><td class="right">${usd(p.viaticos)}</td>
             <td class="right num">${usd(p.total)}</td><td class="right">${usd(p.precio_unitario_cliente)}</td></tr>`
         )
         .join('')}</tbody>
-      <tfoot><tr><td>TOTAL</td><td></td><td class="right">${usd(k.fabricacion)}</td><td></td><td class="right">${usd(k.viaticos)}</td><td class="right">${usd(k.comisiones_fijas)}</td><td class="right num">${usd(k.total)}</td><td></td></tr></tfoot>
+      <tfoot><tr><td>TOTAL</td><td></td><td class="right">${usd(k.fabricacion)}</td><td></td><td class="right">${usd(k.viaticos)}</td><td class="right num">${usd(k.total)}</td><td></td></tr></tfoot>
     </table></div>
     <div class="cot-desglose">
       <div><small>Costo total</small><strong>${usd(k.costo_fabricacion + k.costo_viaticos)}</strong></div>
       ${k.pasos.map((p) => `<div><small>${esc(p.nombre)} (${pctTxt(p.porcentaje)})</small><strong>${usd(p.monto)}</strong></div>`).join('')}
       <div><small>Ganancia viáticos</small><strong>${usd(k.ganancia_viaticos)}</strong></div>
-      <div><small>${esc(doc.comision_fija_nombre || 'Comisión en monto')}</small><strong>${usd(k.comisiones_fijas)}</strong></div>
       <div class="total"><small>Cotización total</small><strong>${usd(k.total)}</strong></div>
     </div>
     ${k.avisos.map((a) => `<p class="aviso-cot">${icon('alert')} ${esc(a)}</p>`).join('')}`;
@@ -181,7 +180,6 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
             )
             .join('')}
           <div class="field"><span>&nbsp;</span><button class="btn" type="button" data-accion="agregar-comision">${icon('plus')}Agregar comisión (%)</button></div>
-          <label class="field"><span>Comisión en monto por pieza (nombre)</span>${campoTxt('data-campo="comision_fija_nombre"', doc.comision_fija_nombre, 'placeholder="Ej. Francisco"')}</label>
         </div>
         <p class="muted nota">Se aplica como en el Excel: costo ÷ (1 − margen) y luego ÷ (1 − cada comisión), en el orden indicado.</p>
       </section>
@@ -195,7 +193,6 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
               <div class="cot-pieza-cab">
                 <label class="field" style="flex:2.2"><span>Pieza</span>${campoTxt(`data-pieza="${i}" data-campo="nombre"`, p.nombre)}</label>
                 <label class="field" style="flex:.8"><span>Cantidad a cotizar</span>${campoNum(`data-pieza="${i}" data-campo="cantidad"`, p.cantidad)}</label>
-                <label class="field" style="flex:1"><span>${esc(doc.comision_fija_nombre || 'Comisión en monto')} ($)</span>${campoNum(`data-pieza="${i}" data-campo="comision_fija"`, p.comision_fija)}</label>
                 ${manual ? `<label class="field" style="flex:.8"><span>% de viáticos</span>${campoNum(`data-pieza="${i}" data-campo="viaticos_pct" data-pct`, (p.viaticos_pct ?? 0) * 100)}</label>` : ''}
                 <div class="cot-pieza-acciones">
                   <button class="btn btn-sm" type="button" data-accion="duplicar-pieza" data-pieza="${i}" title="Duplicar pieza">Duplicar</button>
@@ -305,7 +302,7 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
         }
       }
     }
-    if (campo === 'comision_fija_nombre' || campo === 'reparto_viaticos') pintar();
+    if (campo === 'reparto_viaticos') pintar();
     else refrescarCalculos();
     guardarDiferido();
   });
@@ -324,7 +321,7 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
         doc.piezas[i].lineas.splice(j, 1);
         break;
       case 'agregar-pieza':
-        doc.piezas.push({ nombre: `Pieza ${doc.piezas.length + 1}`, cantidad: 1, comision_fija: 0, viaticos_pct: null, lineas: [lineaVacia()] });
+        doc.piezas.push({ nombre: `Pieza ${doc.piezas.length + 1}`, cantidad: 1, viaticos_pct: null, lineas: [lineaVacia()] });
         break;
       case 'duplicar-pieza': {
         const copia = structuredClone(doc.piezas[i]);

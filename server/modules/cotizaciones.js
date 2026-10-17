@@ -160,7 +160,7 @@ router.put('/:id', async (req, res) => {
         actual.id,
         t(p.nombre, 200) || `Pieza ${i + 1}`,
         Math.max(0, n(p.cantidad, 1)),
-        n(p.comision_fija, 0),
+        0, // la comisión en monto por pieza ya no se usa: las comisiones van en % arriba
         p.viaticos_pct === null || p.viaticos_pct === undefined || p.viaticos_pct === '' ? null : n(p.viaticos_pct, 0),
         i
       );
@@ -330,15 +330,15 @@ router.get('/:id/excel', async (req, res) => {
   }
 
   titulo('RESUMEN DE LA COTIZACIÓN');
-  encabezado(['PIEZA', 'CANTIDAD', 'FABRICACIÓN', '% VIÁTICOS', 'VIÁTICOS', (c.comision_fija_nombre || 'COMISIÓN').toUpperCase(), 'TOTAL']);
+  encabezado(['PIEZA', 'CANTIDAD', 'FABRICACIÓN', '% VIÁTICOS', 'VIÁTICOS', 'TOTAL']);
   k.piezas.forEach((p) => {
-    const r = h.addRow([p.nombre, p.cantidad, p.fabricacion, p.viaticos_pct, p.viaticos, p.comision_fija, p.total]);
-    [3, 5, 6, 7].forEach((col) => (r.getCell(col).numFmt = usd));
+    const r = h.addRow([p.nombre, p.cantidad, p.fabricacion, p.viaticos_pct, p.viaticos, p.total]);
+    [3, 5, 6].forEach((col) => (r.getCell(col).numFmt = usd));
     r.getCell(4).numFmt = pct;
   });
-  const tot = h.addRow(['COTIZACIÓN TOTAL', '', k.fabricacion, '', k.viaticos, k.comisiones_fijas, k.total]);
+  const tot = h.addRow(['COTIZACIÓN TOTAL', '', k.fabricacion, '', k.viaticos, k.total]);
   tot.font = { bold: true };
-  [3, 5, 6, 7].forEach((col) => (tot.getCell(col).numFmt = usd));
+  [3, 5, 6].forEach((col) => (tot.getCell(col).numFmt = usd));
   for (const a of k.avisos) h.addRow([`⚠ ${a}`]).font = { color: { argb: 'FFB45309' } };
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

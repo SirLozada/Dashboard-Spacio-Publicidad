@@ -42,7 +42,7 @@ test('reproduce los cálculos del Excel de costeo', async () => {
     body: {
       ...nueva.datos,
       contacto: 'Francisco Pinto',
-      piezas: [{ nombre: 'Puntera aire acondicionado', cantidad: 1, comision_fija: 200, lineas: AA }],
+      piezas: [{ nombre: 'Puntera aire acondicionado', cantidad: 1, lineas: AA }],
       viaticos: VIATICOS,
     },
   });
@@ -50,7 +50,14 @@ test('reproduce los cálculos del Excel de costeo', async () => {
   assert.strictEqual(k.piezas[0].costo_unitario.toFixed(2), '1179.50');
   assert.strictEqual(k.piezas[0].precio_unitario.toFixed(2), '2217.11');
   assert.strictEqual(k.viaticos.toFixed(2), '2711.11');
-  assert.strictEqual(k.total.toFixed(2), (2217.105263 + 2711.111111 + 200).toFixed(2));
+  assert.strictEqual(k.total.toFixed(2), (2217.105263 + 2711.111111).toFixed(2));
+  // Francisco como una comisión más en % (se agrega arriba, en cadena)
+  const conFrancisco = await pedir(`/cotizaciones/${nueva.datos.id}`, {
+    method: 'PUT',
+    body: { ...guardada.datos, comisiones: [...guardada.datos.comisiones, { nombre: 'Francisco', porcentaje: 0.1 }] },
+  });
+  assert.strictEqual(conFrancisco.datos.calculo.piezas[0].precio_unitario.toFixed(2), (2217.105263 / 0.9).toFixed(2));
+  assert.deepStrictEqual(conFrancisco.datos.calculo.pasos.map((p) => p.nombre), ['Ganancia', 'Fernando', 'Darwin', 'Francisco']);
 
   // La cantidad a cotizar multiplica la fabricación
   const dos = await pedir(`/cotizaciones/${nueva.datos.id}`, { method: 'PUT', body: { ...guardada.datos, piezas: [{ ...guardada.datos.piezas[0], cantidad: 2 }] } });

@@ -5,12 +5,12 @@
 // Por pieza (valores por unidad):
 //   costo        = Σ cantidad × costo unitario de sus materiales y servicios
 //   con margen   = costo ÷ (1 − margen)                 (p. ej. 30 %)
-//   comisiones   = precio ÷ (1 − comisión), en cadena    (p. ej. Fernando 20 %, Darwin 5 %)
+//   comisiones   = precio ÷ (1 − comisión), en cadena    (p. ej. Fernando 20 %, Darwin 5 %, Francisco…)
 //   fabricación  = precio final unitario × cantidad a cotizar
 // Viáticos del proyecto:
 //   costo ÷ (1 − margen de viáticos), repartido entre las piezas
 //   (proporcional a la fabricación o con porcentajes manuales)
-// Total de la pieza = fabricación + viáticos asignados + comisión en monto (p. ej. Francisco).
+// Total de la pieza = fabricación + viáticos asignados.
 
 const num = (v) => {
   const n = Number(v);
@@ -49,7 +49,6 @@ export function calcularCotizacion(c) {
       precio_unitario: precio,
       pasos, // montos por unidad
       fabricacion: precio * cantidad,
-      comision_fija: num(p.comision_fija),
       viaticos_pct_manual: p.viaticos_pct === null || p.viaticos_pct === undefined || p.viaticos_pct === '' ? null : num(p.viaticos_pct),
     };
   });
@@ -66,7 +65,7 @@ export function calcularCotizacion(c) {
     else p.viaticos_pct = totalFab > 0 ? p.fabricacion / totalFab : piezas.length ? 1 / piezas.length : 0;
     sumaPct += p.viaticos_pct;
     p.viaticos = precioViaticos * p.viaticos_pct;
-    p.total = p.fabricacion + p.viaticos + p.comision_fija;
+    p.total = p.fabricacion + p.viaticos;
     p.precio_unitario_cliente = p.cantidad > 0 ? p.total / p.cantidad : p.total;
   }
   if (precioViaticos > 0 && piezas.length && Math.abs(sumaPct - 1) > 0.0001) {
@@ -88,7 +87,6 @@ export function calcularCotizacion(c) {
     costo_viaticos: costoViaticos,
     viaticos: precioViaticos,
     ganancia_viaticos: precioViaticos - costoViaticos,
-    comisiones_fijas: suma('comision_fija'),
     total: suma('total'),
     pasos: resumenPasos, // ganancia y cada comisión, en montos totales
     avisos,
