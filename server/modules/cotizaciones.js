@@ -36,7 +36,8 @@ const fraccion = (v, porDefecto) => {
 
 async function cargar(id) {
   const c = await db.get(
-    `SELECT c.*, t.numero AS trabajo_numero, t.cliente, t.marca, t.tienda, t.ubicacion, t.descripcion AS trabajo_descripcion
+    `SELECT c.*, (SELECT u.numero FROM cotizaciones u WHERE u.id = c.unificada_en) AS unificada_en_numero,
+       t.numero AS trabajo_numero, t.cliente, t.marca, t.tienda, t.ubicacion, t.descripcion AS trabajo_descripcion
      FROM cotizaciones c JOIN trabajos t ON t.id = c.trabajo_id WHERE c.id = ?`,
     id
   );
@@ -53,6 +54,8 @@ async function cargar(id) {
   const doc = {
     ...c,
     codigo: numeroCotizacion(c.numero),
+    unificada_en_codigo: c.unificada_en_numero ? numeroCotizacion(c.unificada_en_numero) : null,
+    origenes: c.origenes ? JSON.parse(c.origenes) : [],
     proyecto: `${numeroTrabajo(c.trabajo_numero)} · ${c.cliente}`,
     comisiones: JSON.parse(c.comisiones || '[]'),
     piezas: piezas.map((p) => ({ ...p, lineas: lineas.filter((l) => l.pieza_id === p.id) })),
@@ -86,6 +89,9 @@ router.get('/', async (req, res) => {
       costo: d.calculo.costo_fabricacion + d.calculo.costo_viaticos,
       total: d.calculo.total,
       actualizado_en: d.actualizado_en,
+      unificada_en: d.unificada_en,
+      unificada_en_codigo: d.unificada_en_codigo,
+      origenes: d.origenes,
     }))
   );
 });
@@ -200,6 +206,78 @@ router.put('/:id', async (req, res) => {
 });
 
 // Copia una cotización (nueva versión) con un número nuevo.
+// Une en una cotización nueva (aprobada) las piezas aprobadas de varias
+// cotizaciones. Las originales quedan marcadas como unificadas en la nueva.
+router.post('/unir', async (req, res) => {
+  const b = req.body || {};
+  const ids = [...new Set((Array.isArray(b.cotizaciones) ? b.cotizaciones : []).map(Number).filter(Number.isInteger))];
+  const piezasElegidas = new Set((Array.isArray(b.piezas) ? b.piezas : []).map(Number));
+  if (!ids.length) throw new HttpError(400, 'Selecciona las cotizaciones a unir');
+  const fuentes = [];
+  for (const id of ids) {
+    const c = await cargar(id);
+    if (!c) throw new HttpError(404, 'Cotización no encontrada');
+    fuentes.push(c);
+  }
+  const piezas = fuentes.flatMap((c) => c.piezas.filter((p) => piezasElegidas.has(p.id)).map((p) => ({ ...p, origen: c.codigo })));
+  if (!piezas.length) throw new HttpError(400, 'Selecciona al menos una pieza aprobada');
+  const trabajoId = convertir(b.trabajo_id, 'int') || fuentes[0].trabajo_id;
+  if (!(await db.value('SELECT 1 FROM trabajos WHERE id = ?', trabajoId))) throw new HttpError(400, 'Selecciona un proyecto registrado');
+  // Margen y comisiones: los de la primera cotización (se avisa si difieren).
+  const base = fuentes[0];
+  const firma = (c) => JSON.stringify([c.margen, c.margen_viaticos, c.comisiones]);
+  const parametrosDistintos = fuentes.some((c) => firma(c) !== firma(base));
+  const viaticos = b.incluir_viaticos ? fuentes.flatMap((c) => c.viaticos.map((v) => ({ ...v, origen: c.codigo }))) : [];
+
+  const id = await db.transaction(async (tx) => {
+    const numero = await tx.value('SELECT COALESCE(MAX(numero), 0) + 1 FROM cotizaciones');
+    const { lastInsertRowid: nuevaId } = await tx.run(
+      `INSERT INTO cotizaciones (numero, trabajo_id, contacto, fecha, estado, margen, margen_viaticos, comisiones, comision_fija_nombre,
+         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, observaciones, origenes, creado_por)
+       VALUES (?, ?, ?, ?, 'aprobada', ?, ?, ?, ?, 'proporcional', ?, ?, ?, ?, ?, ?)`,
+      numero, trabajoId, base.contacto, hoy(), base.margen, base.margen_viaticos, JSON.stringify(base.comisiones), base.comision_fija_nombre,
+      base.validez_dias, base.tiempo_entrega, base.condiciones,
+      `Cotización consolidada con las piezas aprobadas de ${fuentes.map((c) => c.codigo).join(', ')}.`,
+      JSON.stringify(fuentes.map((c) => c.codigo)),
+      req.usuario.id
+    );
+    for (const [i, p] of piezas.entries()) {
+      const { lastInsertRowid: piezaId } = await tx.run(
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, 0, NULL, ?)',
+        nuevaId, p.nombre, p.cantidad, i
+      );
+      for (const l of p.lineas) {
+        await tx.run(
+          'INSERT INTO cotizacion_lineas (pieza_id, material_id, material, descripcion, proveedor, cantidad, costo_unitario, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          piezaId, l.material_id, l.material, l.descripcion, l.proveedor, l.cantidad, l.costo_unitario, l.orden
+        );
+      }
+    }
+    for (const [i, v] of viaticos.entries()) {
+      await tx.run(
+        'INSERT INTO cotizacion_viaticos (cotizacion_id, concepto, descripcion, proveedor, cantidad, costo_unitario, orden) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        nuevaId, v.concepto, [v.descripcion, `(${v.origen})`].filter(Boolean).join(' '), v.proveedor, v.cantidad, v.costo_unitario, i
+      );
+    }
+    // Las originales: aprobadas si aportaron piezas, rechazadas si no; todas apuntan a la consolidada.
+    for (const c of fuentes) {
+      const aporto = c.piezas.some((p) => piezasElegidas.has(p.id));
+      await tx.run(
+        "UPDATE cotizaciones SET unificada_en = ?, estado = ?, actualizado_en = datetime('now') WHERE id = ?",
+        nuevaId, aporto ? 'aprobada' : 'rechazada', c.id
+      );
+    }
+    return nuevaId;
+  });
+  const nueva = await cargar(id);
+  res.status(201).json({
+    ...nueva,
+    aviso: parametrosDistintos
+      ? `Las cotizaciones tenían márgenes o comisiones distintos: se usaron los de ${base.codigo}. Revisa los precios antes de enviarla.`
+      : null,
+  });
+});
+
 router.post('/:id/duplicar', async (req, res) => {
   const c = await cargar(req.params.id);
   if (!c) throw new HttpError(404, 'Cotización no encontrada');
@@ -242,6 +320,8 @@ router.delete('/:id', async (req, res) => {
     await tx.run('DELETE FROM cotizacion_lineas WHERE pieza_id IN (SELECT id FROM cotizacion_piezas WHERE cotizacion_id = ?)', c.id);
     await tx.run('DELETE FROM cotizacion_piezas WHERE cotizacion_id = ?', c.id);
     await tx.run('DELETE FROM cotizacion_viaticos WHERE cotizacion_id = ?', c.id);
+    // Si era una consolidada, las originales vuelven a quedar libres.
+    await tx.run('UPDATE cotizaciones SET unificada_en = NULL WHERE unificada_en = ?', c.id);
     await tx.run('DELETE FROM cotizaciones WHERE id = ?', c.id);
   });
   res.json({ ok: true });

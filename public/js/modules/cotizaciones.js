@@ -34,7 +34,8 @@ export default {
     };
     async function cargar() {
       todas = await api('/cotizaciones');
-      const por = (e) => todas.filter((c) => c.estado === e);
+      // Las originales ya unificadas no se cuentan: su monto está en la consolidada.
+      const por = (e) => todas.filter((c) => c.estado === e && !c.unificada_en);
       const suma = (l) => l.reduce((s, c) => s + c.total, 0);
       $('[data-kpis]').innerHTML = `
         <div class="kpi"><small>Borradores</small><strong>${por('borrador').length}</strong></div>

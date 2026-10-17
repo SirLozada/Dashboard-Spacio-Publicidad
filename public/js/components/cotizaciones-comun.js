@@ -442,15 +442,18 @@ function calculadoraViaticos(doc, alAplicar) {
 export function tablaCotizaciones(lista, { conProyecto = true } = {}) {
   if (!lista.length) return vacio('Todavía no hay cotizaciones', 'file');
   return `<div class="table-wrap"><table class="data responsive">
-    <thead><tr><th>N°</th>${conProyecto ? '<th>Proyecto</th>' : ''}<th>Piezas</th><th>Fecha</th><th>Estado</th><th class="right">Costo</th><th class="right">Total cotizado</th><th></th></tr></thead>
+    <thead><tr><th class="col-check" title="Seleccionar para unir"></th><th>N°</th>${conProyecto ? '<th>Proyecto</th>' : ''}<th>Piezas</th><th>Fecha</th><th>Estado</th><th class="right">Costo</th><th class="right">Total cotizado</th><th></th></tr></thead>
     <tbody>${lista
       .map(
         (c) => `<tr data-cotizacion="${c.id}">
-        <td data-label="N°" class="num">${esc(c.codigo)}</td>
+        <td data-label="Unir" class="col-check" data-stop><input type="checkbox" data-elegir-cot="${c.id}" aria-label="Seleccionar ${esc(c.codigo)} para unir" ${c.unificada_en ? 'disabled title="Ya está unificada"' : ''}></td>
+        <td data-label="N°" class="num">${esc(c.codigo)}${
+          c.origenes?.length ? `<br><small class="muted" title="Consolidada de ${esc(c.origenes.join(', '))}">Une ${c.origenes.length} cotizaciones</small>` : ''
+        }</td>
         ${conProyecto ? `<td data-label="Proyecto" class="truncate" title="${esc(c.proyecto)}">${esc(c.proyecto)}${c.trabajo_descripcion ? ` · ${esc(c.trabajo_descripcion.split('\n')[0])}` : ''}</td>` : ''}
         <td data-label="Piezas" class="truncate" title="${esc(c.piezas.join(', '))}">${esc(c.piezas.join(', '))}</td>
         <td data-label="Fecha" class="nowrap">${fecha(c.fecha)}</td>
-        <td data-label="Estado">${badgeCot(c.estado)}</td>
+        <td data-label="Estado">${badgeCot(c.estado)}${c.unificada_en_codigo ? `<br><small class="muted">Unificada en ${esc(c.unificada_en_codigo)}</small>` : ''}</td>
         <td data-label="Costo" class="right">${usd(c.costo)}</td>
         <td data-label="Total" class="right num">${usd(c.total)}</td>
         <td data-label="" class="col-acciones">${botonPapelera(`data-borrar-cotizacion="${c.id}"`, 'Eliminar cotización')}</td>
@@ -459,7 +462,101 @@ export function tablaCotizaciones(lista, { conProyecto = true } = {}) {
       .join('')}</tbody></table></div>`;
 }
 
+// Barra que aparece al marcar cotizaciones: unir las aprobadas en una sola.
+function barraUnir(contenedor, alCambiar) {
+  let barra = contenedor.querySelector('.barra-unir');
+  if (!barra) {
+    barra = document.createElement('div');
+    barra.className = 'barra-unir';
+    contenedor.prepend(barra);
+  }
+  const marcadas = [...contenedor.querySelectorAll('[data-elegir-cot]:checked')].map((c) => Number(c.dataset.elegirCot));
+  barra.hidden = !marcadas.length;
+  barra.innerHTML = `<span><strong>${marcadas.length}</strong> ${marcadas.length === 1 ? 'cotización seleccionada' : 'cotizaciones seleccionadas'}</span>
+    <button class="btn btn-ghost btn-sm" type="button" data-limpiar-sel>Quitar selección</button>
+    <button class="btn btn-primary btn-sm" type="button" data-unir>${icon('check')}Unir aprobadas en una cotización</button>`;
+  barra.querySelector('[data-limpiar-sel]').onclick = () => {
+    contenedor.querySelectorAll('[data-elegir-cot]:checked').forEach((c) => (c.checked = false));
+    barraUnir(contenedor, alCambiar);
+  };
+  barra.querySelector('[data-unir]').onclick = () => unirCotizaciones(marcadas, { alCambiar });
+}
+
+// Ventana para elegir las piezas aprobadas y el proyecto de la cotización final.
+export async function unirCotizaciones(ids, { alCambiar } = {}) {
+  ids = [...ids].sort((x, y) => x - y); // en orden de creación (COT-0001, COT-0002…)
+  const [fuentes, trabajos] = await Promise.all([Promise.all(ids.map((id) => api(`/cotizaciones/${id}`))), api('/trabajos?orden=recientes')]);
+  const conViaticos = fuentes.some((c) => c.viaticos.length);
+  const m = modal({
+    wide: true,
+    titulo: 'Unir piezas aprobadas en una cotización',
+    body: `<p class="muted" style="margin-top:0">Marca las piezas que el cliente aprobó. Se creará una cotización nueva, ya aprobada, con esas piezas. Las cotizaciones originales quedan guardadas como «unificadas» (las que no aporten piezas, como rechazadas).</p>
+      ${fuentes
+        .map(
+          (c) => `<div class="unir-fuente"><div class="unir-cab"><strong>${esc(c.codigo)}</strong> · ${esc(c.proyecto)} ${badgeCot(c.estado)}</div>
+            ${c.piezas
+              .map(
+                (p, i) => `<label class="unir-pieza"><input type="checkbox" data-pieza-unir="${p.id}" checked>
+                  <span>${esc(p.nombre)} <small class="muted">× ${aTexto(p.cantidad)}</small></span><b>${usd(c.calculo.piezas[i].fabricacion)}</b></label>`
+              )
+              .join('') || '<span class="muted">Sin piezas</span>'}</div>`
+        )
+        .join('')}
+      <div class="form-grid" style="margin-top:14px">
+        <label class="field full"><span>Proyecto de la cotización final</span><select class="input" name="trabajo">${trabajos
+          .map((t) => `<option value="${t.id}" ${t.id === fuentes[0].trabajo_id ? 'selected' : ''}>${esc(numeroTrabajo(t.numero))} · ${esc(t.cliente)}${t.descripcion ? ` · ${esc(t.descripcion.split('\n')[0])}` : ''}</option>`)
+          .join('')}</select></label>
+        ${
+          conViaticos
+            ? '<label class="check full"><input type="checkbox" name="viaticos" checked> Incluir los transportes y viáticos de estas cotizaciones (revísalos si se repiten)</label>'
+            : ''
+        }
+      </div>
+      <p class="muted nota" data-total-unir></p>`,
+    foot: `<button class="btn" data-close type="button">Cancelar</button><button class="btn btn-primary" type="button" data-ok>${icon('check')}Crear cotización consolidada</button>`,
+  });
+  const totalUnir = () => {
+    let total = 0;
+    fuentes.forEach((c) =>
+      c.piezas.forEach((p, i) => {
+        if (m.el.querySelector(`[data-pieza-unir="${p.id}"]`).checked) total += c.calculo.piezas[i].fabricacion;
+      })
+    );
+    const n = m.el.querySelectorAll('[data-pieza-unir]:checked').length;
+    m.el.querySelector('[data-total-unir]').innerHTML = `${n} ${n === 1 ? 'pieza seleccionada' : 'piezas seleccionadas'} · fabricación ${usd(total)} (sin viáticos)`;
+  };
+  m.el.addEventListener('change', totalUnir);
+  totalUnir();
+  m.el.querySelector('[data-ok]').addEventListener('click', async (e) => {
+    const piezas = [...m.el.querySelectorAll('[data-pieza-unir]:checked')].map((c) => Number(c.dataset.piezaUnir));
+    if (!piezas.length) return toast('Marca al menos una pieza aprobada', 'error');
+    e.currentTarget.disabled = true;
+    try {
+      const nueva = await api('/cotizaciones/unir', {
+        method: 'POST',
+        body: {
+          cotizaciones: ids,
+          piezas,
+          trabajo_id: Number(m.el.querySelector('[name=trabajo]').value),
+          incluir_viaticos: !!m.el.querySelector('[name=viaticos]')?.checked,
+        },
+      });
+      m.close();
+      toast(`Se creó ${nueva.codigo} con ${nueva.piezas.length} ${nueva.piezas.length === 1 ? 'pieza' : 'piezas'}`);
+      if (nueva.aviso) toast(nueva.aviso, 'error');
+      alCambiar?.();
+      editorCotizacion(nueva.id, { alCambiar });
+    } catch (err) {
+      toast(err.message, 'error');
+      e.currentTarget.disabled = false;
+    }
+  });
+}
+
 export function conectarCotizaciones(contenedor, { obtener, alCambiar }) {
+  contenedor.addEventListener('change', (e) => {
+    if (e.target.closest('[data-elegir-cot]')) barraUnir(contenedor, alCambiar);
+  });
   conectarPapeleras(contenedor, '[data-borrar-cotizacion]', {
     mensaje: (b) => `¿Eliminar la cotización ${obtener(Number(b.dataset.borrarCotizacion))?.codigo}? Esta acción no se puede deshacer.`,
     eliminar: (b) => api(`/cotizaciones/${b.dataset.borrarCotizacion}`, { method: 'DELETE' }),
@@ -467,6 +564,7 @@ export function conectarCotizaciones(contenedor, { obtener, alCambiar }) {
     exito: 'Cotización eliminada',
   });
   contenedor.addEventListener('click', (e) => {
+    if (e.target.closest('[data-stop]')) return;
     const fila = e.target.closest('tr[data-cotizacion]');
     if (fila) editorCotizacion(Number(fila.dataset.cotizacion), { alCambiar });
   });

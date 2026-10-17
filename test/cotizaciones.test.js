@@ -87,3 +87,37 @@ test('duplicar, listar y eliminar; el trabajo no se borra con cotizaciones', asy
   assert.strictEqual((await pedir(`/trabajos/${copia.datos.trabajo_id}`, { method: 'DELETE' })).status, 400);
   assert.strictEqual((await pedir(`/cotizaciones/${copia.datos.id}`, { method: 'DELETE' })).status, 200);
 });
+
+test('unir en una sola cotización las piezas aprobadas de varias cotizaciones', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'KITCHENAID', descripcion: 'Varios' } });
+  const crear = async (nombres) => {
+    const c = await pedir('/cotizaciones', { method: 'POST', body: { trabajo_id: t.datos.id } });
+    const r = await pedir(`/cotizaciones/${c.datos.id}`, {
+      method: 'PUT',
+      body: { ...c.datos, piezas: nombres.map((nombre) => ({ nombre, cantidad: 1, lineas: L([['Material', 1, 100]]) })), viaticos: L([['Camión', 1, 50]]).map((v) => ({ ...v, concepto: 'Camión' })) },
+    });
+    return r.datos;
+  };
+  const a = await crear(['Isla', 'Mueble carreta']);
+  const b = await crear(['Stand evento']);
+  const c = await crear(['Exhibidor']);
+  // Aprueban: Isla (de A) y Stand (de B); C no
+  const elegidas = [a.piezas[0].id, b.piezas[0].id];
+  const u = await pedir('/cotizaciones/unir', { method: 'POST', body: { cotizaciones: [a.id, b.id, c.id], piezas: elegidas, incluir_viaticos: true } });
+  assert.strictEqual(u.status, 201);
+  assert.strictEqual(u.datos.estado, 'aprobada');
+  assert.deepStrictEqual(u.datos.piezas.map((p) => p.nombre), ['Isla', 'Stand evento']);
+  assert.deepStrictEqual(u.datos.origenes, [a.codigo, b.codigo, c.codigo]);
+  assert.strictEqual(u.datos.viaticos.length, 3);
+  assert.strictEqual(u.datos.aviso, null);
+  const lista = (await pedir(`/cotizaciones?trabajo_id=${t.datos.id}`)).datos;
+  const estado = (id) => lista.find((x) => x.id === id);
+  assert.strictEqual(estado(a.id).estado, 'aprobada');
+  assert.strictEqual(estado(a.id).unificada_en_codigo, u.datos.codigo);
+  assert.strictEqual(estado(c.id).estado, 'rechazada');
+  // Sin piezas elegidas no se puede
+  assert.strictEqual((await pedir('/cotizaciones/unir', { method: 'POST', body: { cotizaciones: [a.id], piezas: [] } })).status, 400);
+  // Al eliminar la consolidada, las originales quedan libres
+  await pedir(`/cotizaciones/${u.datos.id}`, { method: 'DELETE' });
+  assert.strictEqual((await pedir(`/cotizaciones/${a.id}`)).datos.unificada_en, null);
+});

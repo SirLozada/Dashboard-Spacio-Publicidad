@@ -424,6 +424,17 @@ table.data tr.cerrada td { color: var(--text-2); }
 .aviso-cot { color: var(--warning); background: var(--warning-soft); border-radius: var(--radius-sm); padding: 8px 10px; display: flex; gap: 6px; align-items: center; margin: 10px 0 0; font-size: 13.5px; }
 .aviso-cot svg { width: 16px; height: 16px; }
 
+.col-check { width: 1%; }
+.col-check input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--primary); }
+.barra-unir { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 10px 14px; background: var(--primary-soft); border-bottom: 1px solid #bfdcef; position: sticky; top: 0; z-index: 2; }
+.barra-unir > span { margin-right: auto; }
+.unir-fuente { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; display: grid; gap: 6px; }
+.unir-cab { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.unir-pieza { display: flex; gap: 10px; align-items: center; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--surface-2); cursor: pointer; }
+.unir-pieza input { width: 18px; height: 18px; accent-color: var(--success); }
+.unir-pieza span { flex: 1; }
+.unir-pieza:has(input:not(:checked)) { opacity: .55; }
+
 /* ---------- Toasts ---------- */
 .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 80; display: grid; gap: 8px; }
 .toast { background: var(--sidebar); color: #fff; padding: 11px 16px; border-radius: 9px; box-shadow: var(--shadow-lg); font-size: 14px; max-width: 360px; animation: pop .2s ease; }
