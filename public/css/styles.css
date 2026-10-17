@@ -7,17 +7,22 @@
   --text: #0f172a;
   --text-2: #475569;
   --text-3: #94a3b8;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-soft: #eef2ff;
+  /* Colores de la marca Spacio (puntos del logo) */
+  --spacio-amarillo: #fcc127;
+  --spacio-magenta: #e02d8b;
+  --spacio-azul: #2197d4;
+  --primary: #1679b5;
+  --primary-hover: #12659a;
+  --primary-soft: #e8f4fb;
   --danger: #dc2626;
   --danger-soft: #fef2f2;
   --warning: #b45309;
   --warning-soft: #fffbeb;
   --success: #16a34a;
-  --sidebar: #0f172a;
-  --sidebar-text: #cbd5e1;
-  --sidebar-active: #1e293b;
+  --sidebar: #0a0a0b;
+  --sidebar-text: #c7c9ce;
+  --sidebar-active: #1c1c20;
+  --franja: linear-gradient(90deg, var(--spacio-amarillo) 0 33.3%, var(--spacio-magenta) 33.3% 66.6%, var(--spacio-azul) 66.6%);
   --radius: 10px;
   --radius-sm: 7px;
   --shadow: 0 1px 2px rgb(15 23 42 / .06), 0 1px 3px rgb(15 23 42 / .08);
@@ -38,29 +43,31 @@ svg.icon { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: no
 button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---------- Marca ---------- */
-.brand { display: flex; align-items: center; gap: 10px; padding: 18px 18px 22px; color: #fff; }
-.brand strong { display: block; font-size: 15px; letter-spacing: .2px; }
-.brand small { display: block; color: var(--text-3); font-size: 12px; }
-.brand-mark { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #6366f1, #4f46e5); color: #fff; font-weight: 800; font-size: 18px; }
-.brand-lg { padding: 0 0 22px; color: var(--text); }
-.brand-lg strong { font-size: 18px; }
+.brand { padding: 22px 20px 20px; display: grid; gap: 8px; }
+.brand img { display: block; width: 172px; height: auto; }
+.brand small { color: #8b8d94; font-size: 11.5px; letter-spacing: .12em; text-transform: uppercase; padding-left: 2px; }
+.brand-login { display: grid; justify-items: center; gap: 8px; padding: 4px 0 18px; }
+.brand-login img { width: 240px; max-width: 100%; height: auto; }
+.brand-login small { color: var(--text-2); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; }
 
 /* ---------- Login ---------- */
-.login { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; background: radial-gradient(circle at 20% 10%, #e0e7ff, transparent 45%), var(--bg); }
-.login-card { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 30px 26px; box-shadow: var(--shadow-lg); display: grid; gap: 14px; }
+.login { min-height: 100%; display: grid; place-items: center; padding: 24px 16px; background: radial-gradient(circle at 15% 10%, rgb(33 151 212 / .14), transparent 40%), radial-gradient(circle at 85% 90%, rgb(224 45 139 / .10), transparent 40%), #0a0a0b; }
+.login-card { position: relative; overflow: hidden; width: 100%; max-width: 380px; background: var(--surface); border-radius: 16px; padding: 34px 26px 28px; box-shadow: var(--shadow-lg); display: grid; gap: 14px; }
+.login-card::before { content: ""; position: absolute; inset: 0 0 auto; height: 5px; background: var(--franja); }
 
 /* ---------- Layout ---------- */
 .layout { min-height: 100%; }
 .sidebar { position: fixed; inset: 0 auto 0 0; width: var(--sidebar-w); background: var(--sidebar); display: flex; flex-direction: column; z-index: 40; transition: transform .2s ease; }
+.sidebar::before { content: ""; height: 4px; flex: none; background: var(--franja); }
 .nav { display: grid; gap: 2px; padding: 0 10px; }
 .nav-link { display: flex; align-items: center; gap: 11px; width: 100%; padding: 10px 12px; border-radius: 8px; color: var(--sidebar-text); background: none; border: 0; cursor: pointer; text-align: left; font-size: 14.5px; text-decoration: none !important; }
 .nav-link:hover { background: var(--sidebar-active); color: #fff; }
 .nav-link.active { background: var(--primary); color: #fff; }
 .nav-section { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; padding: 16px 12px 6px; }
-.sidebar-footer { margin-top: auto; padding: 12px 10px 16px; border-top: 1px solid #1e293b; display: grid; gap: 2px; }
+.sidebar-footer { margin-top: auto; padding: 12px 10px 16px; border-top: 1px solid #1f1f23; display: grid; gap: 2px; }
 .user-chip { display: flex; gap: 10px; align-items: center; padding: 8px 12px 10px; color: #fff; }
 .user-chip small { display: block; color: var(--text-3); font-size: 12px; }
-.avatar { width: 34px; height: 34px; border-radius: 50%; background: #334155; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; }
+.avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--spacio-magenta); display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; }
 .main { margin-left: var(--sidebar-w); min-height: 100vh; display: flex; flex-direction: column; }
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px; padding: 14px 28px; background: rgb(244 246 250 / .9); backdrop-filter: blur(8px); border-bottom: 1px solid transparent; }
 .topbar h1 { margin: 0; font-size: 20px; font-weight: 700; }
@@ -90,7 +97,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 }
 .field textarea { resize: vertical; min-height: 84px; }
 .input:focus, .field input:focus, .field select:focus, .field textarea:focus, .toolbar input:focus, .toolbar select:focus {
-  border-color: var(--primary); box-shadow: 0 0 0 3px rgb(79 70 229 / .15);
+  border-color: var(--primary); box-shadow: 0 0 0 3px rgb(22 121 181 / .18);
 }
 .form-error { margin: 0; padding: 9px 12px; background: var(--danger-soft); color: var(--danger); border-radius: var(--radius-sm); font-size: 14px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
@@ -164,7 +171,7 @@ table.data tr.soon td:first-child { box-shadow: inset 4px 0 0 #f59e0b; }
 /* ---------- Proveedores (tarjetas) ---------- */
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
 .prov-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; cursor: pointer; transition: border-color .12s, box-shadow .12s; }
-.prov-card:hover { border-color: var(--primary); box-shadow: 0 6px 16px -8px rgb(79 70 229 / .45); }
+.prov-card:hover { border-color: var(--primary); box-shadow: 0 6px 16px -8px rgb(22 121 181 / .45); }
 .prov-card h3 { margin: 0; font-size: 16px; }
 .prov-card .services { color: var(--text-2); font-size: 14px; }
 .prov-card .meta { display: grid; gap: 5px; font-size: 13.5px; color: var(--text-2); }
