@@ -1,4 +1,5 @@
 import { api, qs } from '../api.js';
+import { filtroAprobados } from '../state.js';
 import { icon } from '../icons.js';
 import { esc, fecha, fechaHora, hoyIso, debounce, modal, toast, campo, leerFormulario, vacio } from '../ui.js';
 import {
@@ -23,7 +24,19 @@ const sumarDias = (iso, n) => {
 
 async function vistaResumen(cont) {
   const f = { colaborador_id: '', trabajo_id: '', desde: '', hasta: '', estado: '', q: '' };
-  const [colaboradores, trabajos] = await Promise.all([api('/pagos/colaboradores'), api('/trabajos?orden=recientes')]);
+  // Proyectos para el filtro: los aprobados y los que ya tienen colaboradores asignados.
+  const [colaboradores, aprobados, asignados] = await Promise.all([
+    api('/pagos/colaboradores'),
+    api(`/trabajos${qs({ orden: 'recientes', estatus: filtroAprobados() })}`),
+    api('/pagos/asignaciones'),
+  ]);
+  const trabajos = [...aprobados];
+  for (const a of asignados) {
+    if (!trabajos.some((t) => t.id === a.trabajo_id)) {
+      trabajos.push({ id: a.trabajo_id, numero: a.numero, cliente: a.cliente, descripcion: a.trabajo_descripcion });
+    }
+  }
+  trabajos.sort((x, y) => y.numero - x.numero);
   cont.innerHTML = `
     <div class="kpis" id="kpis"></div>
     <div class="toolbar">
@@ -31,7 +44,7 @@ async function vistaResumen(cont) {
       <select name="colaborador_id" aria-label="Colaborador"><option value="">Todos los colaboradores</option>${colaboradores
         .map((c) => `<option value="${c.id}">${esc(c.nombre)}</option>`)
         .join('')}</select>
-      <select name="trabajo_id" aria-label="Proyecto"><option value="">Todos los proyectos</option>${trabajos
+      <select name="trabajo_id" aria-label="Proyecto"><option value="">Todos los proyectos aprobados</option>${trabajos
         .map((t) => `<option value="${t.id}">${esc(proyectoTxt(t))}</option>`)
         .join('')}</select>
     </div>

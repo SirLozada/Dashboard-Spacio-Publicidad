@@ -2,7 +2,7 @@
 // asignación y abono, detalle de una asignación y la sección de la ficha del trabajo.
 import { api, qs } from '../api.js';
 import { icon } from '../icons.js';
-import { numeroTrabajo } from '../state.js';
+import { numeroTrabajo, esAprobado, filtroAprobados } from '../state.js';
 import { esc, fecha, fechaHora, hoyIso, modal, toast, confirmar, campo, leerFormulario, vacio } from '../ui.js';
 
 export const METODOS = ['Pago móvil', 'Transferencia en Bs', 'Efectivo USD', 'Efectivo Bs', 'Zelle', 'Binance / USDT', 'Otro'];
@@ -87,7 +87,7 @@ export function formularioColaborador(c, { alGuardar } = {}) {
 export async function formularioAsignacion({ asignacion = null, trabajoId = null, alGuardar } = {}) {
   const nuevo = !asignacion;
   const [trabajos, colaboradores] = await Promise.all([
-    nuevo ? api('/trabajos?orden=recientes') : [],
+    nuevo ? api(`/trabajos${qs({ orden: 'recientes', estatus: filtroAprobados() })}`) : [],
     nuevo ? api('/pagos/colaboradores') : [],
   ]);
   const opcionesColab = () =>
@@ -100,7 +100,7 @@ export async function formularioAsignacion({ asignacion = null, trabajoId = null
       ${
         nuevo
           ? `<label class="field full"><span>Proyecto <b class="req">*</b></span>
-              <select name="trabajo_id" required><option value="">— Selecciona un trabajo —</option>${trabajos
+              <select name="trabajo_id" required><option value="">— Selecciona un proyecto aprobado —</option>${trabajos
                 .map((t) => `<option value="${t.id}" ${t.id === trabajoId ? 'selected' : ''}>${esc(proyectoTxt(t))}</option>`)
                 .join('')}</select></label>
             <label class="field full"><span>Colaborador <b class="req">*</b></span>
@@ -512,7 +512,11 @@ export async function seccionPagosTrabajo(contenedor, trabajo) {
     const suma = (k) => r2(asignaciones.reduce((s, a) => s + a[k], 0));
     contenedor.innerHTML = `
       <div class="section-title">${icon('dinero')} Pagos de producción
-        <button class="btn btn-sm section-action" type="button" data-asignar>${icon('plus')}Asignar colaborador</button></div>
+        ${
+          esAprobado(trabajo.estatus)
+            ? `<button class="btn btn-sm section-action" type="button" data-asignar>${icon('plus')}Asignar colaborador</button>`
+            : '<span class="section-action muted nota">Disponible cuando el proyecto esté aprobado</span>'
+        }</div>
       ${
         asignaciones.length
           ? `<div class="kpis kpis-3 kpis-compactos">

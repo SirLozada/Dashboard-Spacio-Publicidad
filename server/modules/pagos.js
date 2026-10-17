@@ -5,6 +5,7 @@ const ExcelJS = require('exceljs');
 const { db } = require('../db');
 const config = require('../config');
 const bcv = require('../lib/bcv');
+const estatus = require('../lib/estatus');
 const { crearCrud } = require('../lib/crud');
 const { HttpError, hoy, sumarDias, convertir, likeParam } = require('../lib/util');
 
@@ -206,8 +207,10 @@ function leerAsignacion(body, parcial) {
 
 router.post('/asignaciones', async (req, res) => {
   const datos = leerAsignacion(req.body, false);
-  if (!datos.trabajo_id || !(await db.value('SELECT 1 FROM trabajos WHERE id = ?', datos.trabajo_id))) {
-    throw new HttpError(400, 'Selecciona un proyecto existente');
+  const trabajo = datos.trabajo_id && (await db.get('SELECT estatus FROM trabajos WHERE id = ?', datos.trabajo_id));
+  if (!trabajo) throw new HttpError(400, 'Selecciona un proyecto existente');
+  if (!estatus.lista(trabajo.estatus).some((k) => config.ESTATUS_APROBADOS.includes(k))) {
+    throw new HttpError(400, 'Sólo se pueden asignar colaboradores a proyectos aprobados');
   }
   if (!datos.colaborador_id || !(await db.value('SELECT 1 FROM colaboradores WHERE id = ?', datos.colaborador_id))) {
     throw new HttpError(400, 'Selecciona un colaborador');

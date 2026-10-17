@@ -91,6 +91,7 @@ app.get('/api/config', privado, (req, res) => {
     estatus: config.ESTATUS,
     estatusCerrados: config.ESTATUS_CERRADOS,
     estatusSinAlerta: config.ESTATUS_SIN_ALERTA,
+    estatusAprobados: config.ESTATUS_APROBADOS,
     prefijoTrabajo: config.PREFIJO_TRABAJO,
     moneda: config.MONEDA,
     diasAlerta: config.DIAS_ALERTA,

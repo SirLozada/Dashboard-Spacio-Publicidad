@@ -61,9 +61,16 @@ test('lee la tasa y la fecha valor de la página del BCV', () => {
 
 let asignacion;
 test('flujo completo: colaborador, asignación, abonos en USD y Bs, estados', async () => {
-  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Whirlpool', descripcion: 'Exhibidor Whirlpool' } });
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Whirlpool', descripcion: 'Exhibidor Whirlpool', estatus: 'produccion' } });
   const c = await pedir('/pagos/colaboradores', { method: 'POST', body: { nombre: 'José Pérez', especialidad: 'Carpintería' } });
   assert.strictEqual(c.status, 201);
+  // Sólo proyectos aprobados (o en un estatus posterior) admiten colaboradores
+  const sinAprobar = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Otro', estatus: 'por_cotizar,render' } });
+  const rechazada = await pedir('/pagos/asignaciones', {
+    method: 'POST',
+    body: { trabajo_id: sinAprobar.datos.id, colaborador_id: c.datos.id, monto_acordado_usd: '100' },
+  });
+  assert.strictEqual(rechazada.status, 400);
   const a = await pedir('/pagos/asignaciones', {
     method: 'POST',
     body: { trabajo_id: t.datos.id, colaborador_id: c.datos.id, tarea: 'Estructura', fecha_inicio: HOY, monto_acordado_usd: '400' },

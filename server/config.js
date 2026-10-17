@@ -22,6 +22,10 @@ const ESTATUS_CERRADOS = ['finalizado', 'rechazado'];
 // (el trabajo se entregó aunque siga abierto hasta finalizarlo).
 const ESTATUS_SIN_ALERTA = [...ESTATUS_CERRADOS, 'instalado'];
 
+// Estatus de un proyecto ya aprobado por el cliente (aprobado o posterior).
+// Sólo estos proyectos pueden recibir colaboradores en "Pagos de producción".
+const ESTATUS_APROBADOS = ['aprobado', 'produccion', 'instalado', 'reclamo', 'finalizado'];
+
 module.exports = {
   PORT: Number(process.env.PORT) || 3000,
   DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
@@ -30,6 +34,7 @@ module.exports = {
   ESTATUS_KEYS: ESTATUS.map((e) => e.key),
   ESTATUS_CERRADOS,
   ESTATUS_SIN_ALERTA,
+  ESTATUS_APROBADOS,
   PREFIJO_TRABAJO: process.env.PREFIJO_TRABAJO || 'SP-',
   MONEDA: process.env.MONEDA || 'USD',
   DIAS_ALERTA: Number(process.env.DIAS_ALERTA) || 3,

@@ -9,6 +9,9 @@ export const esCerrado = (key) => state.config?.estatusCerrados.includes(key);
 
 // Un trabajo puede tener varios estatus, guardados como "por_cotizar,render".
 export const listaEstatus = (valor) => String(valor ?? '').split(',').filter(Boolean);
+// Proyecto aprobado (Aprobado o un estatus posterior): habilitado para pagos de producción.
+export const esAprobado = (valor) => listaEstatus(valor).some((k) => state.config?.estatusAprobados.includes(k));
+export const filtroAprobados = () => state.config?.estatusAprobados.join(',');
 export const sinAlerta = (valor) => listaEstatus(valor).some((k) => state.config?.estatusSinAlerta.includes(k));
 
 // Marca o desmarca un estatus. Finalizado y Rechazado van solos: al marcar uno
