@@ -62,7 +62,18 @@ app.use('/api', async (req, res, next) => {
     next();
   } catch (err) {
     console.error('No se pudo preparar la base de datos:', err);
-    res.status(503).json({ error: `La base de datos no está disponible. ${err.message}` });
+    const respuesta = { error: `La base de datos no está disponible. ${err.message}` };
+    // Para diagnosticar la configuración: sólo nombres de variables, nunca sus valores.
+    if (req.path === '/salud') {
+      respuesta.diagnostico = {
+        version: (process.env.VERCEL_GIT_COMMIT_SHA || 'local').slice(0, 7),
+        entorno: process.env.VERCEL_ENV || null,
+        variables: Object.keys(process.env)
+          .filter((k) => /TURSO|LIBSQL|DATABASE|BLOB|STORAGE|ADMIN/i.test(k))
+          .sort(),
+      };
+    }
+    res.status(503).json(respuesta);
   }
 });
 
