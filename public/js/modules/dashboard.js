@@ -36,8 +36,9 @@ export default {
       if (filtro.alerta) params.alerta = filtro.alerta;
       const [resumen, lista] = await Promise.all([api('/trabajos/resumen'), api(`/trabajos${qs(params)}`)]);
 
-      $('#cards').innerHTML = state.config.estatus
-        .filter((e) => e.dashboard)
+      const tarjetas = state.config.estatus.filter((e) => e.dashboard);
+      $('#cards').style.setProperty('--n', tarjetas.length);
+      $('#cards').innerHTML = tarjetas
         .map(
           (e) => `<button class="stat-card ${filtro.estatus === e.key ? 'active' : ''}" style="--c:${e.color}" data-estatus="${e.key}" type="button">
             <div class="label"><span class="dot"></span>${esc(e.tarjeta)}</div>

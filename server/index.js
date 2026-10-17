@@ -52,6 +52,7 @@ app.get('/api/config', privado, (req, res) => {
   res.json({
     estatus: config.ESTATUS,
     estatusCerrados: config.ESTATUS_CERRADOS,
+    estatusSinAlerta: config.ESTATUS_SIN_ALERTA,
     prefijoTrabajo: config.PREFIJO_TRABAJO,
     moneda: config.MONEDA,
     diasAlerta: config.DIAS_ALERTA,
@@ -64,6 +65,7 @@ app.get('/api/config', privado, (req, res) => {
 const MODULOS = [
   { ruta: '/api/trabajos', router: trabajos.router },
   { ruta: '/api/adjuntos', router: trabajos.adjuntosRouter },
+  { ruta: '/api/pendientes', router: trabajos.pendientesRouter },
   { ruta: '/api/materiales', router: materiales.router },
   { ruta: '/api/proveedores', router: proveedores.router },
   { ruta: '/api/usuarios', router: usuarios.router, soloAdmin: true },
@@ -85,9 +87,13 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
+  require('./importar')
+    .importacionInicial()
+    .catch((err) => console.error('Importación inicial:', err.message))
+    .finally(() =>
   app.listen(config.PORT, () => {
     console.log(`Spacio Publicidad · Dashboard disponible en http://localhost:${config.PORT}`);
-  });
+  }));
 }
 
 module.exports = app;

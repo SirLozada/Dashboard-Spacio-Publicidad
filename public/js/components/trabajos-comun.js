@@ -23,6 +23,7 @@ export function tablaTrabajos(lista, { compacta = false } = {}) {
         ${compacta ? '' : `<td data-label="Ubicación" class="hide-sm">${esc(t.ubicacion)}</td>`}
         <td data-label="Descripción" class="truncate" title="${esc(t.descripcion)}">${esc(t.descripcion)}</td>
         <td data-label="Estatus" data-stop>${selectEstatus(t.estatus, `data-estatus="${t.id}"`)}</td>
+        <td data-label="Pendiente" class="truncate" title="${esc(t.proximo_pendiente)}">${t.proximo_pendiente ? `${esc(t.proximo_pendiente)}${t.total_pendientes > 1 ? ` <span class="more">+${t.total_pendientes - 1}</span>` : ''}` : ''}</td>
         ${compacta ? '' : `<td data-label="Inicio" class="nowrap hide-sm">${fecha(t.fecha_inicio)}</td>`}
         ${compacta ? '' : `<td data-label="Entrega cotización" class="nowrap hide-sm">${fecha(t.fecha_cotizacion)}</td>`}
         <td data-label="Entrega" class="nowrap"><span>${fecha(t.fecha_entrega) || '<span class="muted">—</span>'}${etiquetaVencimiento(t)}</span></td>
@@ -35,7 +36,7 @@ export function tablaTrabajos(lista, { compacta = false } = {}) {
     <thead><tr>
       <th>N°</th><th>Cliente</th><th>Marca</th><th>Tienda</th>
       ${compacta ? '' : '<th>Ubicación</th>'}
-      <th>Descripción</th><th>Estatus</th>
+      <th>Descripción</th><th>Estatus</th><th>Pendiente</th>
       ${compacta ? '' : '<th>Inicio</th><th>Entrega cot.</th>'}
       <th class="sortable" data-sort="entrega">Entrega</th><th>Responsable</th>
       ${compacta ? '' : '<th></th>'}
@@ -123,7 +124,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     sugerencias ? Promise.resolve(sugerencias) : cargarSugerencias(),
   ]);
   const nuevo = !id;
-  const pendientes = []; // archivos elegidos antes de crear el trabajo
+  const archivosPorSubir = []; // archivos elegidos antes de crear el trabajo
   let pendienteGuardado = Promise.resolve();
   let huboCambios = false;
 
@@ -140,6 +141,12 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     titulo: titulo(),
     body: `<form class="form-grid" novalidate>
         ${camposFicha(sug).map((c) => campo(c, trabajo[c.name])).join('')}
+      </form>
+      <div class="section-title">${icon('check')} Pendientes</div>
+      <ul class="todo"></ul>
+      <form class="todo-add">
+        <input class="input" name="texto" placeholder="Agregar pendiente (ej. Presupuesto proveedor, Artes finales…)" autocomplete="off" maxlength="500">
+        <button class="btn" type="submit">${icon('plus')}Agregar</button>
       </form>
       <div class="section-title">${icon('clip')} Archivos y fotografías</div>
       <label class="dropzone">
@@ -212,6 +219,60 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     form.addEventListener('change', (e) => e.target.name && guardarCampo(e.target.name));
   }
 
+  // --- Pendientes ---
+  // En un trabajo nuevo se guardan en memoria y se envían al crearlo.
+  const listaPend = m.el.querySelector('.todo');
+  const formPend = m.el.querySelector('.todo-add');
+  let pendientes = trabajo.pendientes || [];
+  const pintarPendientes = () => {
+    listaPend.innerHTML = pendientes.length
+      ? pendientes
+          .map(
+            (p, i) => `<li class="${p.hecho ? 'done' : ''}">
+              <label><input type="checkbox" data-hecho="${p.id ?? i}" ${p.hecho ? 'checked' : ''} ${nuevo ? 'disabled' : ''}><span>${esc(p.texto)}</span></label>
+              <button class="icon-btn" type="button" data-del-pend="${p.id ?? i}" aria-label="Quitar pendiente">${icon('x')}</button>
+            </li>`
+          )
+          .join('')
+      : '<li class="muted empty-todo">Sin pendientes</li>';
+  };
+  pintarPendientes();
+  const accionPendiente = async (peticion) => {
+    try {
+      pendientes = await peticion;
+      huboCambios = true;
+      pintarPendientes();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+  formPend.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const texto = formPend.elements.texto.value.trim();
+    if (!texto) return;
+    formPend.elements.texto.value = '';
+    if (nuevo) {
+      pendientes.push({ texto, hecho: 0 });
+      pintarPendientes();
+    } else {
+      accionPendiente(api(`/trabajos/${id}/pendientes`, { method: 'POST', body: { texto } }));
+    }
+  });
+  listaPend.addEventListener('change', (e) => {
+    const c = e.target.closest('[data-hecho]');
+    if (c) accionPendiente(api(`/pendientes/${c.dataset.hecho}`, { method: 'PATCH', body: { hecho: c.checked } }));
+  });
+  listaPend.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-del-pend]');
+    if (!b) return;
+    if (nuevo) {
+      pendientes.splice(Number(b.dataset.delPend), 1);
+      pintarPendientes();
+    } else {
+      accionPendiente(api(`/pendientes/${b.dataset.delPend}`, { method: 'DELETE' }));
+    }
+  });
+
   // --- Crear trabajo nuevo ---
   m.el.querySelector('[data-crear]')?.addEventListener('click', async (e) => {
     const datos = Object.fromEntries(new FormData(form).entries());
@@ -222,8 +283,8 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     }
     e.currentTarget.disabled = true;
     try {
-      const creado = await api('/trabajos', { method: 'POST', body: datos });
-      if (pendientes.length) await subirArchivos(creado.id, pendientes);
+      const creado = await api('/trabajos', { method: 'POST', body: { ...datos, pendientes: pendientes.map((p) => p.texto) } });
+      if (archivosPorSubir.length) await subirArchivos(creado.id, archivosPorSubir);
       sugerencias = null;
       huboCambios = true;
       toast(`Trabajo ${numeroTrabajo(creado.numero)} creado`);
@@ -257,8 +318,8 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
       return;
     }
     if (nuevo) {
-      pendientes.push(...archivos);
-      lista.innerHTML = pendientes
+      archivosPorSubir.push(...archivos);
+      lista.innerHTML = archivosPorSubir
         .map((f) => `<div class="file"><span class="thumb" style="display:grid;place-items:center;aspect-ratio:4/3">${icon('file')}</span><div class="name">${esc(f.name)}</div></div>`)
         .join('');
       return;

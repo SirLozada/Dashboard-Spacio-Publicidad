@@ -9,6 +9,7 @@ const ESTATUS = [
   { key: 'pendiente_aprobacion', label: 'Pendiente por aprobación', tarjeta: 'Pendiente por aprobación', color: '#f59e0b', dashboard: true },
   { key: 'aprobado', label: 'Aprobado', tarjeta: 'Aprobado', color: '#0ea5e9', dashboard: true },
   { key: 'produccion', label: 'Producción', tarjeta: 'En producción', color: '#2563eb', dashboard: true },
+  { key: 'instalado', label: 'Instalado', tarjeta: 'Instalado', color: '#0d9488', dashboard: true },
   { key: 'reclamo', label: 'Reclamo', tarjeta: 'Reclamos', color: '#e11d48', dashboard: true },
   { key: 'finalizado', label: 'Finalizado', tarjeta: 'Finalizado', color: '#16a34a', dashboard: true },
   { key: 'rechazado', label: 'Rechazado', tarjeta: 'Rechazado', color: '#78716c', dashboard: false },
@@ -17,6 +18,10 @@ const ESTATUS = [
 // Estatus que se consideran "cerrados": no cuentan como activos ni como atrasados.
 const ESTATUS_CERRADOS = ['finalizado', 'rechazado'];
 
+// Estatus que no generan aviso de atraso: los cerrados y los ya instalados
+// (el trabajo se entregó aunque siga abierto hasta finalizarlo).
+const ESTATUS_SIN_ALERTA = [...ESTATUS_CERRADOS, 'instalado'];
+
 module.exports = {
   PORT: Number(process.env.PORT) || 3000,
   DATA_DIR: process.env.DATA_DIR || path.join(__dirname, '..', 'data'),
@@ -24,6 +29,7 @@ module.exports = {
   ESTATUS,
   ESTATUS_KEYS: ESTATUS.map((e) => e.key),
   ESTATUS_CERRADOS,
+  ESTATUS_SIN_ALERTA,
   PREFIJO_TRABAJO: process.env.PREFIJO_TRABAJO || 'SP-',
   MONEDA: process.env.MONEDA || 'USD',
   DIAS_ALERTA: Number(process.env.DIAS_ALERTA) || 3,

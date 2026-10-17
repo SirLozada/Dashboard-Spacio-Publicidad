@@ -6,5 +6,6 @@ export const state = {
 
 export const estatusPorKey = (key) => state.config?.estatus.find((e) => e.key === key);
 export const esCerrado = (key) => state.config?.estatusCerrados.includes(key);
+export const sinAlerta = (key) => state.config?.estatusSinAlerta.includes(key);
 export const numeroTrabajo = (n) => `${state.config?.prefijoTrabajo ?? ''}${String(n).padStart(4, '0')}`;
 export const esAdmin = () => state.usuario?.rol === 'admin';

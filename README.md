@@ -9,14 +9,14 @@ computadora y teléfono, con la información guardada en una base de datos.
 | Módulo | Qué permite |
 | --- | --- |
 | **Dashboard** | Tarjetas con la cantidad de trabajos por estatus (al hacer clic filtran la tabla), avisos de trabajos atrasados y próximos a entregar, y tabla de trabajos activos ordenada por fecha de entrega. |
-| **Control de trabajos** | Registro con número automático (`SP-0001`…), cambio rápido de estatus desde la tabla, búsqueda (cliente, marca, tienda, descripción, N°), filtros por estatus y rango de fechas, orden por fecha de entrega, trabajos atrasados resaltados, ficha completa con **guardado automático**, archivos y fotografías adjuntos, y **exportación a Excel** (respeta los filtros aplicados). |
+| **Control de trabajos** | Registro con número automático (`SP-0001`…), cambio rápido de estatus desde la tabla, búsqueda (cliente, marca, tienda, descripción, N°), filtros por estatus y rango de fechas, orden por fecha de entrega, trabajos atrasados resaltados, ficha completa con **guardado automático**, lista de **pendientes** por trabajo (próximos pasos que se marcan al completarlos), archivos y fotografías adjuntos, y **exportación a Excel** (respeta los filtros aplicados). |
 | **Materiales y precios** | Agregar, editar, eliminar y buscar materiales. Al cambiar un precio se registra la fecha de actualización. |
 | **Proveedores** | Directorio con búsqueda y botones para llamar o escribir por WhatsApp. |
 | **Usuarios** (administradores) | Agregar usuarios, restablecer contraseñas y desactivar accesos. |
 
 Estatus de trabajo: Por cotizar, Render, Pendiente por aprobación, Aprobado,
-Producción, Reclamo, Finalizado y Rechazado. Un trabajo se considera
-**atrasado** si su fecha de entrega ya pasó y no está Finalizado ni Rechazado;
+Producción, Instalado, Reclamo, Finalizado y Rechazado. Un trabajo se considera
+**atrasado** si su fecha de entrega ya pasó y no está Instalado, Finalizado ni Rechazado;
 **próximo** si vence en los próximos 3 días (configurable con `DIAS_ALERTA`).
 
 ## Acceso
@@ -28,6 +28,27 @@ deben cambiar su contraseña inicial.
 
 - **Administrador:** todo, además de gestionar usuarios y eliminar trabajos/proveedores.
 - **Usuario:** registrar, consultar y editar trabajos, materiales y proveedores.
+
+## Importar los Excel anteriores
+
+Al arrancar por primera vez (base de datos sin trabajos), el sistema carga
+automáticamente los Excel de la carpeta [`datos-iniciales/`](datos-iniciales).
+Esto ocurre una sola vez.
+
+También se puede importar un archivo en cualquier momento:
+
+```bash
+npm run importar -- "ruta/al/archivo.xlsx"
+```
+
+El importador reconoce las columnas por su nombre (FECHA, CLIENTE, DESCRIPCION,
+STATUS, PENDIENTE, ENTREGA, Marca, Nombre de tienda, Observación…). En el Excel
+de pendientes, las filas siguientes a un trabajo se agregan como sus pendientes.
+Los trabajos que ya existen (mismo cliente, tienda y descripción) se omiten.
+Equivalencias de estatus: PENDIENTE → Por cotizar (o Render si el próximo
+pendiente es el render), PENDIENTE APROBACION → Pendiente por aprobación,
+PRODUCCION → Producción, PENDIENTE REINSTALACION / Reclamo pendiente → Reclamo,
+Instalado → Instalado.
 
 ## Puesta en marcha
 

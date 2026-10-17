@@ -1,5 +1,5 @@
 import { icon } from './icons.js';
-import { state, estatusPorKey, esCerrado } from './state.js';
+import { state, estatusPorKey, sinAlerta } from './state.js';
 
 // ---------- Utilidades de texto y formato ----------
 
@@ -72,7 +72,7 @@ export function selectEstatus(key, attrs = '') {
 
 // Devuelve 'late' | 'soon' | null según la fecha de entrega del trabajo.
 export function situacion(t) {
-  if (!t.fecha_entrega || esCerrado(t.estatus)) return null;
+  if (!t.fecha_entrega || sinAlerta(t.estatus)) return null;
   const d = diasHasta(t.fecha_entrega);
   if (d < 0) return 'late';
   if (d <= state.config.diasAlerta) return 'soon';

@@ -95,3 +95,41 @@ test('el administrador agrega usuarios que deben cambiar su contraseña', async 
   assert.strictEqual((await pedir('/trabajos')).status, 200);
   assert.strictEqual((await pedir('/usuarios')).status, 403);
 });
+
+test('pendientes de un trabajo: agregar, marcar y quitar', async () => {
+  await pedir('/auth/logout', { method: 'POST' });
+  await pedir('/auth/login', { method: 'POST', body: { usuario: 'fernando', password: 'clave-de-prueba' } });
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Daka', pendientes: ['Artes finales', 'Forros'] } });
+  assert.strictEqual(t.datos.proximo_pendiente, 'Artes finales');
+  assert.strictEqual(t.datos.total_pendientes, 2);
+  const ficha = await pedir(`/trabajos/${t.datos.id}`);
+  const [primero] = ficha.datos.pendientes;
+  await pedir(`/pendientes/${primero.id}`, { method: 'PATCH', body: { hecho: true } });
+  let lista = await pedir(`/trabajos/${t.datos.id}/pendientes`, { method: 'POST', body: { texto: 'Presupuesto proveedor' } });
+  assert.strictEqual(lista.datos.length, 3);
+  assert.strictEqual((await pedir(`/trabajos/${t.datos.id}`)).datos.proximo_pendiente, 'Forros');
+  assert.strictEqual((await pedir('/trabajos?q=presupuesto%20prov')).datos.length, 1);
+  lista = await pedir(`/pendientes/${primero.id}`, { method: 'DELETE' });
+  assert.strictEqual(lista.datos.length, 2);
+});
+
+test('instalado no se marca como atrasado', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'Ivoo', estatus: 'instalado', fecha_entrega: '2000-01-01' } });
+  assert.strictEqual(t.status, 201);
+  const atrasados = await pedir('/trabajos?alerta=atrasados');
+  assert.ok(!atrasados.datos.some((x) => x.id === t.datos.id));
+});
+
+test('lee el Excel de trabajos pendientes de Spacio', async () => {
+  const { leerTrabajos } = require('../server/importar');
+  const archivo = path.join(__dirname, '..', 'datos-iniciales', 'PENDIENTES TRABAJOS SPACIO PUBLICIDAD.xlsx');
+  const trabajos = await leerTrabajos(archivo);
+  assert.strictEqual(trabajos.length, 19);
+  const oster = trabajos.find((t) => t.descripcion === 'MUEBLE OSTER');
+  assert.strictEqual(oster.cliente, 'DAKA');
+  assert.strictEqual(oster.estatus, 'produccion');
+  assert.deepStrictEqual(oster.pendientes, ['PRODUCCION', 'FORROS']);
+  const ivoo = trabajos.find((t) => t.cliente === 'IVOO');
+  assert.strictEqual(ivoo.estatus, 'reclamo');
+  assert.strictEqual(ivoo.pendientes.length, 4);
+});
