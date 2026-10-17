@@ -143,6 +143,12 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
       const celda = raiz.querySelector(`[data-total-viatico="${j}"]`);
       if (celda) celda.textContent = usd(aNumero(v.cantidad) * aNumero(v.costo_unitario));
     });
+    k.piezas.forEach((p, i) => {
+      const el = raiz.querySelector(`[data-precio-cliente="${i}"]`);
+      if (el) el.textContent = `${aTexto(p.cantidad)} × ${usd(p.precio_unitario_cliente)} = ${usd(p.total)}`;
+      const nombre = raiz.querySelector(`[data-nombre-cliente="${i}"]`);
+      if (nombre) nombre.textContent = doc.piezas[i].nombre || `Pieza ${i + 1}`;
+    });
     const tv = raiz.querySelector('[data-total-viaticos]');
     if (tv) tv.innerHTML = `Costo: <b>${usd(k.costo_viaticos)}</b> · + ${pctTxt(aNumero(doc.margen_viaticos))}: <b>${usd(k.viaticos)}</b>`;
     raiz.querySelector('[data-resumen]').innerHTML = htmlResumen(k);
@@ -261,7 +267,14 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
 
       <section class="cot-seccion">
         <h3>Para el documento del cliente</h3>
-        <div class="form-grid">
+        <p class="muted nota" style="margin:-4px 0 12px">Describe lo que incluye cada monto. Es lo que verá el cliente debajo del nombre de cada pieza.</p>
+        <div class="cot-desc-cliente">${doc.piezas
+          .map(
+            (p, i) => `<label class="field"><span><span data-nombre-cliente="${i}">${esc(p.nombre || `Pieza ${i + 1}`)}</span> · <span class="muted" data-precio-cliente="${i}"></span></span>
+              <textarea class="input" rows="3" data-pieza="${i}" data-campo="descripcion_cliente" placeholder="Ej. Fabricación e instalación de puntera en MDF con fórmica gris, iluminación LED y logo en acrílico. Incluye transporte.">${esc(p.descripcion_cliente || '')}</textarea></label>`
+          )
+          .join('')}</div>
+        <div class="form-grid" style="margin-top:14px">
           <label class="field"><span>Tiempo de entrega</span>${campoTxt('data-campo="tiempo_entrega"', doc.tiempo_entrega, 'placeholder="Ej. 15 días hábiles tras la aprobación"')}</label>
           <label class="field"><span>Validez de la oferta (días)</span>${campoNum('data-campo="validez_dias"', doc.validez_dias)}</label>
           <label class="field full"><span>Condiciones</span><textarea class="input" rows="3" data-campo="condiciones" placeholder="Ej. 60 % de anticipo y 40 % contra entrega. Precios no incluyen IVA.">${esc(doc.condiciones || '')}</textarea></label>

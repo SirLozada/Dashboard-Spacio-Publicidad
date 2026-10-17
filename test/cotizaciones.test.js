@@ -76,6 +76,11 @@ test('exporta Excel interno y documento para el cliente sin costos', async () =>
   assert.match(html.datos, /COT-0001/);
   assert.match(html.datos, /STAR WHITE/);
   assert.doesNotMatch(html.datos, /Fernando|Darwin|Mano de obra|1\.179,50/); // nada interno
+  // Descripción del monto escrita a mano para el cliente
+  const c = (await pedir('/cotizaciones/1')).datos;
+  c.piezas[0].descripcion_cliente = 'Fabricación e instalación de puntera con iluminación LED.';
+  await pedir('/cotizaciones/1', { method: 'PUT', body: c });
+  assert.match((await pedir('/cotizaciones/1/cliente')).datos, /Fabricación e instalación de puntera con iluminación LED\./);
 });
 
 test('duplicar, listar y eliminar; el trabajo no se borra con cotizaciones', async () => {

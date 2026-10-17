@@ -162,9 +162,10 @@ router.put('/:id', async (req, res) => {
     await tx.run('DELETE FROM cotizacion_viaticos WHERE cotizacion_id = ?', actual.id);
     for (const [i, p] of piezas.entries()) {
       const { lastInsertRowid: piezaId } = await tx.run(
-        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?)',
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?, ?)',
         actual.id,
         t(p.nombre, 200) || `Pieza ${i + 1}`,
+        t(p.descripcion_cliente, 3000),
         Math.max(0, n(p.cantidad, 1)),
         0, // la comisión en monto por pieza ya no se usa: las comisiones van en % arriba
         p.viaticos_pct === null || p.viaticos_pct === undefined || p.viaticos_pct === '' ? null : n(p.viaticos_pct, 0),
@@ -243,8 +244,8 @@ router.post('/unir', async (req, res) => {
     );
     for (const [i, p] of piezas.entries()) {
       const { lastInsertRowid: piezaId } = await tx.run(
-        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, 0, NULL, ?)',
-        nuevaId, p.nombre, p.cantidad, i
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, 0, NULL, ?)',
+        nuevaId, p.nombre, p.descripcion_cliente, p.cantidad, i
       );
       for (const l of p.lineas) {
         await tx.run(
@@ -292,8 +293,8 @@ router.post('/:id/duplicar', async (req, res) => {
     );
     for (const p of c.piezas) {
       const { lastInsertRowid: piezaId } = await tx.run(
-        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?)',
-        lastInsertRowid, p.nombre, p.cantidad, p.comision_fija, p.viaticos_pct, p.orden
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        lastInsertRowid, p.nombre, p.descripcion_cliente, p.cantidad, p.comision_fija, p.viaticos_pct, p.orden
       );
       for (const l of p.lineas) {
         await tx.run(
@@ -453,7 +454,8 @@ router.get('/:id/cliente', async (req, res) => {
   .datos b { color: #475569; font-weight: 600; display: inline-block; min-width: 92px; }
   table { width: 100%; border-collapse: collapse; font-size: 14px; }
   th { text-align: left; background: #0a0a0b; color: #fff; padding: 9px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  td { padding: 10px; border-bottom: 1px solid #e2e8f0; }
+  td { padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+  td .desc { margin-top: 4px; color: #475569; font-size: 13px; line-height: 1.5; white-space: pre-line; }
   .r { text-align: right; white-space: nowrap; }
   tfoot td { font-weight: 800; font-size: 16px; border-bottom: 0; border-top: 2px solid #0a0a0b; }
   .notas { margin-top: 24px; font-size: 13.5px; color: #334155; display: grid; gap: 6px; white-space: pre-line; }
@@ -477,7 +479,9 @@ router.get('/:id/cliente', async (req, res) => {
   <table>
     <thead><tr><th>Descripción</th><th class="r">Cantidad</th><th class="r">Precio unitario</th><th class="r">Total</th></tr></thead>
     <tbody>${k.piezas
-      .map((p) => `<tr><td>${esc(p.nombre)}</td><td class="r">${esc(p.cantidad)}</td><td class="r">${dinero(p.precio_unitario_cliente)}</td><td class="r">${dinero(p.total)}</td></tr>`)
+      .map((p, i) => `<tr><td><strong>${esc(p.nombre)}</strong>${
+        c.piezas[i].descripcion_cliente ? `<div class="desc">${esc(c.piezas[i].descripcion_cliente)}</div>` : ''
+      }</td><td class="r">${esc(p.cantidad)}</td><td class="r">${dinero(p.precio_unitario_cliente)}</td><td class="r">${dinero(p.total)}</td></tr>`)
       .join('')}</tbody>
     <tfoot><tr><td colspan="3">TOTAL</td><td class="r">${dinero(k.total)}</td></tr></tfoot>
   </table>
