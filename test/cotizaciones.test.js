@@ -73,7 +73,9 @@ test('exporta Excel interno y documento para el cliente sin costos', async () =>
   assert.match(xls.tipo, /spreadsheetml/);
   const html = await pedir('/cotizaciones/1/cliente');
   assert.strictEqual(html.status, 200);
-  assert.match(html.datos, /COT-0001/);
+  assert.match(html.datos, /PRESUPUESTO NRO\. 0001-\d\d/);
+  assert.match(html.datos, /RIF: J-31325103-8/);
+  assert.match(html.datos, /spaciopublicidad@gmail.com/);
   assert.match(html.datos, /STAR WHITE/);
   assert.doesNotMatch(html.datos, /Fernando|Darwin|Mano de obra|1\.179,50/); // nada interno
   // Descripción del monto escrita a mano para el cliente

@@ -52,7 +52,17 @@ const PRIORIDADES = [
   { key: 'urgente', label: 'Urgente', color: '#dc2626' },
 ];
 
+// Datos de la empresa que salen en el presupuesto del cliente.
+const EMPRESA = {
+  nombre: 'Spacio Publicidad C.A.',
+  rif: process.env.EMPRESA_RIF || 'J-31325103-8',
+  direccion: process.env.EMPRESA_DIRECCION || 'Av. Michelena Prolongación, Local 91-A-120, Sector San Blas, Valencia, Edo. Carabobo',
+  telefono: process.env.EMPRESA_TELEFONO || '0414-4143448',
+  correo: process.env.EMPRESA_CORREO || 'spaciopublicidad@gmail.com',
+};
+
 module.exports = {
+  EMPRESA,
   SOLICITUD_TIPOS,
   SOLICITUD_ESTADOS,
   PRIORIDADES,

@@ -28,6 +28,13 @@ const t = (v, max = 2000) => {
   const x = convertir(v, 'text');
   return x ? x.slice(0, max) : null;
 };
+// Datos del encabezado del documento del cliente: [campo, largo máximo]
+const CAMPOS_CLIENTE = [
+  ['razon_social', 200],
+  ['direccion_cliente', 300],
+  ['referencia', 200],
+  ['forma_pago', 100],
+];
 const fraccion = (v, porDefecto) => {
   const x = n(v, porDefecto);
   if (x < 0 || x >= 1) throw new HttpError(400, 'Los márgenes y comisiones deben estar entre 0 % y 99 %');
@@ -148,7 +155,7 @@ router.put('/:id', async (req, res) => {
     await tx.run(
       `UPDATE cotizaciones SET contacto = ?, fecha = ?, estado = ?, margen = ?, margen_viaticos = ?, comisiones = ?,
          comision_fija_nombre = ?, reparto_viaticos = ?, validez_dias = ?, tiempo_entrega = ?, condiciones = ?, observaciones = ?,
-         actualizado_en = datetime('now') WHERE id = ?`,
+         razon_social = ?, direccion_cliente = ?, referencia = ?, forma_pago = ?, actualizado_en = datetime('now') WHERE id = ?`,
       t(b.contacto, 200),
       convertir(b.fecha, 'date') || hoy(),
       estado,
@@ -161,6 +168,7 @@ router.put('/:id', async (req, res) => {
       t(b.tiempo_entrega, 300),
       t(b.condiciones),
       t(b.observaciones),
+      ...CAMPOS_CLIENTE.map(([campo, max]) => t(b[campo], max)),
       actual.id
     );
     await tx.run('DELETE FROM cotizacion_lineas WHERE pieza_id IN (SELECT id FROM cotizacion_piezas WHERE cotizacion_id = ?)', actual.id);
@@ -240,10 +248,10 @@ router.post('/unir', async (req, res) => {
     const numero = await tx.value('SELECT COALESCE(MAX(numero), 0) + 1 FROM cotizaciones');
     const { lastInsertRowid: nuevaId } = await tx.run(
       `INSERT INTO cotizaciones (numero, trabajo_id, contacto, fecha, estado, margen, margen_viaticos, comisiones, comision_fija_nombre,
-         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, observaciones, origenes, creado_por)
-       VALUES (?, ?, ?, ?, 'aprobada', ?, ?, ?, ?, 'proporcional', ?, ?, ?, ?, ?, ?)`,
+         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, razon_social, direccion_cliente, referencia, forma_pago, observaciones, origenes, creado_por)
+       VALUES (?, ?, ?, ?, 'aprobada', ?, ?, ?, ?, 'proporcional', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       numero, trabajoId, base.contacto, hoy(), base.margen, base.margen_viaticos, JSON.stringify(base.comisiones), base.comision_fija_nombre,
-      base.validez_dias, base.tiempo_entrega, base.condiciones,
+      base.validez_dias, base.tiempo_entrega, base.condiciones, ...CAMPOS_CLIENTE.map(([campo]) => base[campo]),
       `Cotización consolidada con las piezas aprobadas de ${fuentes.map((c) => c.codigo).join(', ')}.`,
       JSON.stringify(fuentes.map((c) => c.codigo)),
       req.usuario.id
@@ -292,10 +300,10 @@ router.post('/:id/duplicar', async (req, res) => {
     const numero = await tx.value('SELECT COALESCE(MAX(numero), 0) + 1 FROM cotizaciones');
     const { lastInsertRowid } = await tx.run(
       `INSERT INTO cotizaciones (numero, trabajo_id, contacto, fecha, margen, margen_viaticos, comisiones, comision_fija_nombre,
-         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, observaciones, creado_por)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, razon_social, direccion_cliente, referencia, forma_pago, observaciones, creado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       numero, c.trabajo_id, c.contacto, hoy(), c.margen, c.margen_viaticos, JSON.stringify(c.comisiones), c.comision_fija_nombre,
-      c.reparto_viaticos, c.validez_dias, c.tiempo_entrega, c.condiciones, c.observaciones, req.usuario.id
+      c.reparto_viaticos, c.validez_dias, c.tiempo_entrega, c.condiciones, ...CAMPOS_CLIENTE.map(([campo]) => c[campo]), c.observaciones, req.usuario.id
     );
     for (const p of c.piezas) {
       const { lastInsertRowid: piezaId } = await tx.run(
@@ -468,8 +476,8 @@ router.patch('/:id/textos-cliente', async (req, res) => {
         piezas[i]
       );
     }
-    for (const campo of ['tiempo_entrega', 'condiciones']) {
-      if (campo in b) await tx.run(`UPDATE cotizaciones SET ${campo} = ? WHERE id = ?`, t(b[campo], campo === 'condiciones' ? 2000 : 300), c.id);
+    for (const [campo, max] of [['tiempo_entrega', 300], ['condiciones', 2000], ...CAMPOS_CLIENTE]) {
+      if (campo in b) await tx.run(`UPDATE cotizaciones SET ${campo} = ? WHERE id = ?`, t(b[campo], max), c.id);
     }
     await tx.run("UPDATE cotizaciones SET actualizado_en = datetime('now') WHERE id = ?", c.id);
   });
@@ -488,60 +496,111 @@ router.get('/:id/cliente', async (req, res) => {
     'Content-Security-Policy',
     "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'"
   );
+  const E = config.EMPRESA;
+  const numeroPresupuesto = `${String(c.numero).padStart(4, '0')}-${(c.fecha || hoy()).slice(2, 4)}`;
+  const monto = (v) => dinero(v).replace('$', '');
   res.send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(c.codigo)} · ${esc(c.cliente)}</title>
+<title>Presupuesto ${esc(numeroPresupuesto)} · ${esc(c.razon_social || c.cliente)}</title>
 <style>
-  :root { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; }
+  :root { font-family: Poppins, Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; color: #111; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { margin: 0; background: #f4f6fa; }
-  .hoja { max-width: 820px; margin: 16px auto 24px; background: #fff; padding: 40px 44px; box-shadow: 0 10px 30px -12px rgb(15 23 42 / .3); position: relative; }
-  .hoja::before { content: ""; position: absolute; inset: 0 0 auto; height: 6px; background: linear-gradient(90deg, #fcc127 0 33.3%, #e02d8b 33.3% 66.6%, #2197d4 66.6%); }
-  header { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; margin-bottom: 28px; }
-  header img { width: 210px; }
-  .num { text-align: right; } .num h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: .04em; } .num div { color: #475569; font-size: 14px; }
-  .datos { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 24px; font-size: 14px; margin-bottom: 24px; padding: 14px 16px; background: #f8fafc; border-radius: 8px; }
-  .datos b { color: #475569; font-weight: 600; display: inline-block; min-width: 92px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  th { text-align: left; background: #0a0a0b; color: #fff; padding: 9px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-  td { padding: 10px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-  .nombre { font-weight: 700; }
-  .desc { margin-top: 4px; color: #475569; font-size: 13px; line-height: 1.5; white-space: pre-line; }
-  .r { text-align: right; white-space: nowrap; }
-  tfoot td { font-weight: 800; font-size: 16px; border-bottom: 0; border-top: 2px solid #0a0a0b; }
-  .notas { margin-top: 24px; font-size: 13.5px; color: #334155; display: grid; gap: 6px; }
+  .hoja { max-width: 820px; margin: 16px auto 24px; background: #fff; padding: 32px; box-shadow: 0 10px 30px -12px rgb(15 23 42 / .3); }
+  .marco { width: 100%; border-collapse: collapse; }
+  .marco > thead > tr > td, .marco > tfoot > tr > td, .marco > tbody > tr > td { padding: 0; }
+  .cabecera { background: #000; color: #fff; display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 26px 30px; }
+  .cabecera img { width: 200px; display: block; }
+  .cabecera .datos-doc { font-weight: 700; font-size: 13px; line-height: 1.75; min-width: 200px; }
+  .cabecera .rif { margin-bottom: 22px; }
+  .cliente { display: grid; grid-template-columns: 1fr 200px; gap: 2px 24px; padding: 8px 14px 6px; font-size: 13px; text-transform: uppercase; }
+  .cliente .et { font-weight: 800; font-size: 12px; }
+  .cliente .val { font-weight: 600; }
+  .cliente .full { grid-column: 1 / -1; }
+  .items { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .items th { background: #000; color: #fff; font-weight: 700; text-align: left; padding: 5px 6px; font-size: 11.5px; text-transform: uppercase; }
+  .items td { padding: 22px 6px 22px; vertical-align: bottom; }
+  .items td.n { background: #f0f0f0; text-align: center; font-weight: 700; white-space: nowrap; width: 88px; }
+  .items td.n.total { width: 110px; }
+  .nombre { font-weight: 700; text-decoration: underline; text-transform: uppercase; margin-bottom: 14px; }
+  .desc { text-transform: uppercase; font-weight: 600; line-height: 1.75; white-space: pre-line; }
+  .items .fila-total td { padding: 16px 6px; font-size: 16px; font-weight: 800; vertical-align: middle; }
+  .items .fila-total td.etiqueta { text-align: center; }
+  .notas { margin: 18px 0 6px; font-size: 12px; display: grid; gap: 4px; }
   .nota { display: flex; gap: 6px; flex-wrap: wrap; } .nota > b { flex: none; }
   .nota .editable { flex: 1; min-width: 200px; white-space: pre-line; }
-  footer { margin-top: 30px; font-size: 12px; color: #64748b; text-align: center; }
+  .terminos { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; margin: 18px 0 10px; align-items: center; }
+  .terminos .moneda { background: #fff200; padding: 3px 4px; justify-self: start; }
+  .terminos .pago { display: flex; gap: 5px; }
+  .pie { margin: 0 4% 8px; background: #000; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 8px 18px; font-size: 10.5px; line-height: 1.6; position: relative; }
+  .pie::after { content: ""; position: absolute; left: 0; bottom: -5px; width: 75%; height: 5px; background: linear-gradient(90deg, #fcc127 0 33.3%, #e02d8b 33.3% 66.6%, #2197d4 66.6%); }
+  .pie svg { width: 13px; height: 13px; vertical-align: -2px; margin-right: 4px; fill: currentColor; }
+  .pie .redes svg { width: 20px; height: 20px; margin: 0 0 0 6px; }
+  .pie .contacto span { margin-right: 14px; white-space: nowrap; }
   /* Edición sobre el documento */
   .editable { outline: none; border-radius: 4px; transition: background .15s, box-shadow .15s; cursor: text; }
   .editable:hover { background: #f0f7fc; box-shadow: 0 0 0 3px #f0f7fc; }
   .editable:focus { background: #fff; box-shadow: 0 0 0 2px #1679b5; }
-  .editable.vacio:empty::before { content: attr(data-placeholder); color: #94a3b8; font-style: italic; }
+  .editable.vacio:empty::before { content: attr(data-placeholder); color: #94a3b8; font-style: italic; text-transform: none; font-weight: 400; }
   .acciones { max-width: 820px; margin: 16px auto 0; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 4px; }
   .acciones .ayuda { font-size: 13.5px; color: #475569; }
   .acciones .estado { font-size: 13px; color: #16a34a; margin-right: 6px; } .acciones .estado.pendiente { color: #b45309; } .acciones .estado.error { color: #dc2626; }
   .acciones button { font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 7px; border: 1px solid #1679b5; background: #1679b5; color: #fff; cursor: pointer; }
+  @page { size: letter; margin: 12mm 12mm 10mm; }
   @media print {
-    body { background: #fff; } .hoja { box-shadow: none; margin: 0; max-width: none; } .acciones { display: none; }
+    body { background: #fff; } .hoja { box-shadow: none; margin: 0; max-width: none; padding: 0; } .acciones { display: none; }
+    .items tbody tr { break-inside: avoid; }
     .editable { background: none !important; box-shadow: none !important; } .editable:empty, .nota.sin-texto { display: none; }
   }
-  @media (max-width: 640px) { .hoja { padding: 28px 18px; } .datos { grid-template-columns: 1fr; } header { flex-direction: column; } .num { text-align: left; } }
+  @media (max-width: 640px) {
+    .hoja { padding: 10px; } .cabecera { flex-direction: column; align-items: flex-start; padding: 20px; } .cabecera .rif { margin-bottom: 8px; }
+    .cliente { grid-template-columns: 1fr; gap: 6px; } .terminos { grid-template-columns: 1fr; }
+    .items { font-size: 11px; } .items th, .items td { padding-left: 3px; padding-right: 3px; } .items td.n, .items td.n.total { width: auto; }
+    .pie { flex-direction: column; align-items: flex-start; gap: 6px; margin: 0 0 8px; } .pie .contacto span { white-space: normal; display: inline-block; }
+    .marco { table-layout: fixed; }
+  }
 </style></head><body>
 <div class="acciones">
-  <span class="ayuda">✏️ Haz clic sobre los nombres y descripciones para corregirlos. Se guardan en la cotización.</span>
+  <span class="ayuda">✏️ Haz clic sobre los textos (cliente, dirección, referencia, piezas, forma de pago…) para corregirlos. Se guardan en la cotización.</span>
   <span><span class="estado" id="estado"></span><button type="button" id="imprimir">Imprimir / Guardar como PDF</button></span>
 </div>
 <div class="hoja">
-  <header><img src="/img/logo-oscuro.png" alt="Spacio Publicidad C.A.">
-    <div class="num"><h1>COTIZACIÓN</h1><div>${esc(c.codigo)}</div><div>Fecha: ${esc(fechaTxt(c.fecha))}</div></div></header>
-  <div class="datos">
-    <div><b>Cliente:</b> ${esc(c.cliente)}</div>
-    ${c.tienda ? `<div><b>Tienda:</b> ${esc(c.tienda)}</div>` : ''}
-    ${c.contacto ? `<div><b>Contacto:</b> ${esc(c.contacto)}</div>` : ''}
-    ${c.ubicacion ? `<div><b>Ubicación:</b> ${esc(c.ubicacion)}</div>` : ''}
-    <div><b>Proyecto:</b> ${esc(c.trabajo_descripcion?.split('\n')[0] || c.proyecto)}</div>
+<table class="marco">
+  <thead><tr><td>
+    <div class="cabecera">
+      <img src="/img/logo-claro.png" alt="${esc(E.nombre)}">
+      <div class="datos-doc">
+        <div class="rif">RIF: ${esc(E.rif)}</div>
+        <div>PRESUPUESTO NRO. ${esc(numeroPresupuesto)}</div>
+        <div>FECHA: ${esc(fechaTxt(c.fecha))}</div>
+      </div>
+    </div>
+    <div class="cliente">
+      <div><div class="et">Cliente:</div>${editable('razon_social', c.razon_social || c.cliente, 'Razón social del cliente', 'div', 'val')}</div>
+      <div><div class="et">Referencia:</div>${editable('referencia', c.referencia ?? c.tienda, 'Tienda o proyecto', 'div', 'val')}</div>
+      <div class="et full">Dirección</div>
+      ${editable('direccion_cliente', c.direccion_cliente, 'Dirección fiscal del cliente', 'div', 'val full')}
+    </div>
+  </td></tr></thead>
+  <tfoot><tr><td>
+  <div class="terminos">
+    <div class="pago">Forma de pago: ${editable('forma_pago', c.forma_pago ?? 'CONTADO', 'Contado', 'span')}</div>
+    <div class="moneda">Moneda: Divisas</div>
+    <div>No incluye IVA</div>
   </div>
-  <table>
-    <thead><tr><th>Descripción</th><th class="r">Cantidad</th><th class="r">Precio unitario</th><th class="r">Total</th></tr></thead>
+  <div class="pie">
+    <div class="contacto">
+      <div><span><svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>${esc(E.direccion)}</span></div>
+      <div><span><svg viewBox="0 0 24 24"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z"/></svg>${esc(E.telefono)}</span>
+        <span><svg viewBox="0 0 24 24"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 4-8 5-8-5V6l8 5 8-5z"/></svg>${esc(E.correo)}</span></div>
+    </div>
+    <div class="redes">
+      <svg viewBox="0 0 24 24" aria-label="Facebook"><path d="M12 2a10 10 0 0 0-1.6 19.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0 0 12 2z"/></svg>
+      <svg viewBox="0 0 24 24" aria-label="Instagram"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm4.6 13.4a2.8 2.8 0 0 1-2.8 2.8h-3.6a2.8 2.8 0 0 1-2.8-2.8V8.6a2.8 2.8 0 0 1 2.8-2.8h3.6a2.8 2.8 0 0 1 2.8 2.8zM12 9.4a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2zm0 4.1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm2.9-4.9a.6.6 0 1 1 0-1.2.6.6 0 0 1 0 1.2z"/></svg>
+    </div>
+  </div>
+  </td></tr></tfoot>
+  <tbody><tr><td>
+  <table class="items">
+    <thead><tr><th>Descripción de producción</th><th style="text-align:center">Cantidad</th><th style="text-align:center">Costo $. Und</th><th style="text-align:center">Total $</th></tr></thead>
     <tbody>${k.piezas
       .map(
         (p, i) => `<tr data-pieza="${i}"><td>${editable('nombre', p.nombre, 'Nombre de la pieza', 'div', 'nombre')}${editable(
@@ -550,18 +609,18 @@ router.get('/:id/cliente', async (req, res) => {
           'Agregar descripción de lo que incluye este monto…',
           'div',
           'desc'
-        )}</td><td class="r">${esc(p.cantidad)}</td><td class="r">${dinero(p.precio_unitario_cliente)}</td><td class="r">${dinero(p.total)}</td></tr>`
+        )}</td><td class="n">${esc(monto(p.cantidad))}</td><td class="n">${monto(p.precio_unitario_cliente)}</td><td class="n total">${monto(p.total)}</td></tr>`
       )
-      .join('')}</tbody>
-    <tfoot><tr><td colspan="3">TOTAL</td><td class="r">${dinero(k.total)}</td></tr></tfoot>
+      .join('')}
+      <tr class="fila-total"><td class="etiqueta">TOTAL GENERAL $</td><td></td><td></td><td class="n total">${monto(k.total)}</td></tr></tbody>
   </table>
   <div class="notas">
-    <div>Montos expresados en dólares estadounidenses (USD).</div>
     <div class="nota ${c.tiempo_entrega ? '' : 'sin-texto'}"><b>Tiempo de entrega:</b> ${editable('tiempo_entrega', c.tiempo_entrega, 'Ej. 15 días hábiles tras la aprobación', 'span')}</div>
     ${c.validez_dias ? `<div><b>Validez de la oferta:</b> ${esc(c.validez_dias)} días</div>` : ''}
     <div class="nota ${c.condiciones ? '' : 'sin-texto'}"><b>Condiciones:</b> ${editable('condiciones', c.condiciones, 'Ej. 60 % de anticipo y 40 % contra entrega', 'span')}</div>
   </div>
-  <footer>Spacio Publicidad C.A.</footer>
+  </td></tr></tbody>
+</table>
 </div>
 <script>
 (() => {
@@ -579,9 +638,10 @@ router.get('/:id/cliente', async (req, res) => {
         nombre: texto(tr.querySelector('[data-campo=nombre]')),
         descripcion_cliente: texto(tr.querySelector('[data-campo=descripcion_cliente]')),
       })),
-      tiempo_entrega: texto(document.querySelector('[data-campo=tiempo_entrega]')),
-      condiciones: texto(document.querySelector('[data-campo=condiciones]')),
     };
+    document.querySelectorAll('[data-campo]').forEach((el) => {
+      if (!el.closest('[data-pieza]')) cuerpo[el.dataset.campo] = texto(el);
+    });
     guardando = guardando
       .then(() => fetch(location.pathname.replace(/\\/cliente$/, '/textos-cliente'), {
         method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cuerpo),
@@ -601,8 +661,8 @@ router.get('/:id/cliente', async (req, res) => {
       temporizador = setTimeout(guardar, 1200);
     });
     el.addEventListener('blur', guardar);
-    // Enter en el nombre no crea una línea nueva
-    if (el.dataset.campo === 'nombre') el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+    // Enter en los textos de una línea no crea una línea nueva
+    if (['nombre', 'razon_social', 'referencia', 'forma_pago'].includes(el.dataset.campo)) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
   });
   document.getElementById('imprimir').addEventListener('click', async () => {
     clearTimeout(temporizador);
