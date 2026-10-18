@@ -5,8 +5,9 @@ import { seccionPagosTrabajo } from './pagos-comun.js';
 import { subirArchivos } from './adjuntos.js';
 import { seccionSolicitudesTrabajo } from './solicitudes-comun.js';
 import { seccionCotizacionesTrabajo } from './cotizaciones-comun.js';
+import { abrirOrdenProduccion } from './orden-produccion.js';
 import { icon } from '../icons.js';
-import { state, numeroTrabajo, esAdmin, alternarEstatus, listaEstatus } from '../state.js';
+import { state, numeroTrabajo, esAdmin, esAprobado, alternarEstatus, listaEstatus } from '../state.js';
 import {
   esc, fecha, fechaHora, campo, modal, toast, confirmar, botonPapelera, conectarPapeleras, botonEstatus, selectorEstatus, badgeEstatus,
   situacion, etiquetaVencimiento, tamanoArchivo, debounce, vacio,
@@ -236,6 +237,7 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
       ${nuevo ? '' : `<div class="meta-line">Creado ${fechaHora(trabajo.creado_en)} · Última actualización ${fechaHora(trabajo.actualizado_en)}</div>`}</div>`,
     foot: `${!nuevo && esAdmin() ? `<button class="btn btn-danger left" type="button" data-borrar>${icon('trash')}Eliminar</button>` : '<span class="left"></span>'}
       ${nuevo ? '' : '<span class="save-state saved">' + icon('check') + 'Los cambios se guardan automáticamente</span>'}
+      ${nuevo ? '' : `<button class="btn" type="button" data-orden ${esAprobado(trabajo.estatus) ? '' : 'hidden'}>${icon('file')}Generar orden de producción</button>`}
       ${nuevo ? '<button class="btn" data-close type="button">Cancelar</button><button class="btn btn-primary" data-crear type="button">' + icon('plus') + 'Crear trabajo</button>' : '<button class="btn btn-primary" data-close type="button">Listo</button>'}`,
     onClose: async () => {
       if (!nuevo) {
@@ -312,6 +314,8 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
         huboCambios = true;
         pintarEstado('saved', 'Guardado');
         m.el.querySelector('.modal-head h2').innerHTML = titulo();
+        const botonOrden = m.el.querySelector('[data-orden]');
+        if (botonOrden) botonOrden.hidden = !esAprobado(trabajo.estatus);
       })
       .catch((err) => {
         pintarEstado('error', `No se pudo guardar: ${err.message}`);
@@ -387,6 +391,21 @@ export async function abrirFicha(id, { alCerrar, inicial = {} } = {}) {
     } else {
       accionPendiente(api(`/pendientes/${b.dataset.delPend}`, { method: 'DELETE' }));
     }
+  });
+
+  // --- Orden de producción (proyectos aprobados) ---
+  m.el.querySelector('[data-orden]')?.addEventListener('click', async () => {
+    camposFicha().forEach((c) => guardarCampo(c.name));
+    await pendienteGuardado;
+    abrirOrdenProduccion(id, {
+      // Los campos que también están en la ficha se actualizan para no pisarlos después.
+      alGuardar: (t) => {
+        Object.assign(trabajo, t);
+        for (const c of camposFicha()) if (c.type !== 'estatus') form.elements[c.name].value = trabajo[c.name] ?? '';
+        huboCambios = true;
+        m.el.querySelector('.modal-head h2').innerHTML = titulo();
+      },
+    }).catch((err) => toast(err.message, 'error'));
   });
 
   // --- Crear trabajo nuevo ---

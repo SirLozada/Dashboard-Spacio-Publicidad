@@ -7,7 +7,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 30,
-      "includeFiles": "{server/migrations/**,datos-iniciales/**,public/js/lib/**,public/img/logo-oscuro.png}"
+      "includeFiles": "{server/migrations/**,datos-iniciales/**,public/js/lib/**,public/img/logo-oscuro.png,public/img/logo-claro.png,node_modules/pdfkit/js/data/**}"
     }
   },
   "rewrites": [

@@ -76,6 +76,22 @@ async function enviar(req, res, adjunto) {
   res.sendFile(path.join(DIR_LOCAL, path.basename(adjunto.archivo)));
 }
 
+// Contenido de un archivo (p. ej. imágenes para la orden de producción).
+async function leer(archivo) {
+  if (esUrlBlob(archivo)) {
+    if (ACCESO_BLOB === 'public') {
+      const r = await fetch(archivo);
+      if (!r.ok) throw new Error(`No se pudo leer el archivo (${r.status})`);
+      return Buffer.from(await r.arrayBuffer());
+    }
+    const { get } = require('@vercel/blob');
+    const r = await get(archivo, { access: 'private' });
+    if (!r || r.statusCode !== 200) throw new Error('Archivo no encontrado');
+    return Buffer.from(await new Response(r.stream).arrayBuffer());
+  }
+  return fs.promises.readFile(path.join(DIR_LOCAL, path.basename(archivo)));
+}
+
 async function borrar(archivo) {
   try {
     if (esUrlBlob(archivo)) {
@@ -89,4 +105,4 @@ async function borrar(archivo) {
   }
 }
 
-module.exports = { MODO, ACCESO_BLOB, MAX_BYTES, esUrlBlob, subidaLocal, tokenSubida, enviar, borrar };
+module.exports = { MODO, ACCESO_BLOB, MAX_BYTES, esUrlBlob, subidaLocal, tokenSubida, enviar, leer, borrar };

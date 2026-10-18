@@ -6,6 +6,8 @@ const { requiereAdmin } = require('../auth');
 const { HttpError, hoy, sumarDias, leerCampos, likeParam } = require('../lib/util');
 const almacen = require('../lib/almacen');
 const estatus = require('../lib/estatus');
+const ordenProduccion = require('../lib/orden-produccion');
+const compromisos = require('../lib/compromisos');
 
 const CAMPOS = {
   cliente: 'text',
@@ -19,6 +21,8 @@ const CAMPOS = {
   fecha_entrega: 'date',
   responsable: 'text',
   observaciones: 'text',
+  especificaciones_tecnicas: 'text',
+  observaciones_fabricacion: 'text',
 };
 const CAMPOS_FECHA = ['fecha_inicio', 'fecha_cotizacion', 'fecha_entrega'];
 // Condiciones SQL según los estatus del trabajo (puede tener varios).
@@ -142,6 +146,18 @@ router.get('/resumen', async (req, res) => {
   });
 });
 
+// Agenda: compromisos calculados a partir de las fechas de los trabajos.
+router.get('/agenda', async (req, res) => {
+  const q = req.query;
+  const fecha = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v || '') ? v : null);
+  const [eventos, clientes, marcas] = await Promise.all([
+    compromisos.listar({ desde: fecha(q.desde), hasta: fecha(q.hasta), cliente: q.cliente, marca: q.marca, estatus: q.estatus }),
+    db.column(`SELECT DISTINCT cliente FROM trabajos WHERE ${ABIERTO('estatus')} ORDER BY cliente COLLATE NOCASE`),
+    db.column(`SELECT DISTINCT marca FROM trabajos WHERE marca IS NOT NULL AND marca <> '' AND ${ABIERTO('estatus')} ORDER BY marca COLLATE NOCASE`),
+  ]);
+  res.json({ eventos, clientes, marcas, tipos: compromisos.TIPOS });
+});
+
 // Valores ya usados, para autocompletar en los formularios.
 router.get('/sugerencias', async (req, res) => {
   const columnas = ['cliente', 'marca', 'tienda', 'ubicacion', 'responsable'];
@@ -229,6 +245,27 @@ router.get('/:id', async (req, res) => {
   if (!t) throw new HttpError(404, 'Trabajo no encontrado');
   [t.adjuntos, t.pendientes] = await Promise.all([listarAdjuntos(t.id), listarPendientes(t.id)]);
   res.json(t);
+});
+
+// ---- Orden de producción (PDF para el taller, sin información financiera) ----
+
+router.get('/:id/orden-produccion', async (req, res) => {
+  const datos = await ordenProduccion.datosOrden(req.params.id);
+  if (!datos) throw new HttpError(404, 'Trabajo no encontrado');
+  datos.imagenes = datos.imagenes.map(({ archivo, ...img }) => img);
+  res.json(datos);
+});
+
+router.get('/:id/orden-produccion.pdf', async (req, res) => {
+  const datos = await ordenProduccion.datosOrden(req.params.id);
+  if (!datos) throw new HttpError(404, 'Trabajo no encontrado');
+  if (!datos.trabajo.aprobado) throw new HttpError(400, 'La orden de producción se genera para proyectos aprobados');
+  const ids = req.query.imagenes === undefined ? null : String(req.query.imagenes).split(',').map(Number).filter(Number.isInteger);
+  const nombre = `orden-produccion-${datos.trabajo.codigo}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `${req.query.descargar ? 'attachment' : 'inline'}; filename="${nombre}"`);
+  res.setHeader('Cache-Control', 'no-store');
+  await ordenProduccion.generarPdf(datos, ids, res);
 });
 
 router.post('/', async (req, res) => {
