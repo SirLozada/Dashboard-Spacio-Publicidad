@@ -175,3 +175,23 @@ test('comisión en monto fijo: se suma al total sin aparecer como concepto para 
   const excel = await pedir(`/cotizaciones/${nueva.datos.id}/excel`);
   assert.strictEqual(excel.status, 200);
 });
+
+test('moneda de pago: sin valor por defecto, se elige en el documento del cliente', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'CLIENTE MONEDA', descripcion: 'Prueba' } });
+  const c = (await pedir('/cotizaciones', { method: 'POST', body: { trabajo_id: t.datos.id } })).datos;
+  assert.strictEqual(c.moneda, null);
+  let doc = (await pedir(`/cotizaciones/${c.id}/cliente`)).datos;
+  assert.match(doc, /moneda-campo sin-elegir/);
+  assert.doesNotThrow(() => new Function(doc.match(/<script>([\s\S]*)<\/script>/)[1]));
+  await pedir(`/cotizaciones/${c.id}/textos-cliente`, { method: 'PATCH', body: { moneda: 'bolivares' } });
+  assert.strictEqual((await pedir(`/cotizaciones/${c.id}`)).datos.moneda, 'bolivares');
+  doc = (await pedir(`/cotizaciones/${c.id}/cliente`)).datos;
+  assert.match(doc, /data-moneda-texto>Bolívares</);
+  // Un valor desconocido no se guarda.
+  await pedir(`/cotizaciones/${c.id}/textos-cliente`, { method: 'PATCH', body: { moneda: 'euros' } });
+  assert.strictEqual((await pedir(`/cotizaciones/${c.id}`)).datos.moneda, null);
+  // El editor también la guarda, y al duplicar se conserva.
+  const conDivisas = (await pedir(`/cotizaciones/${c.id}`, { method: 'PUT', body: { ...c, moneda: 'divisas' } })).datos;
+  assert.strictEqual(conDivisas.moneda, 'divisas');
+  assert.strictEqual((await pedir(`/cotizaciones/${c.id}/duplicar`, { method: 'POST' })).datos.moneda, 'divisas');
+});

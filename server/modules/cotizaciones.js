@@ -35,6 +35,9 @@ const CAMPOS_CLIENTE = [
   ['referencia', 200],
   ['forma_pago', 100],
 ];
+// Moneda de pago del presupuesto: se elige en cada cotización (no hay valor por defecto).
+const MONEDAS = { divisas: 'Divisas', bolivares: 'Bolívares' };
+const monedaValida = (v) => (Object.hasOwn(MONEDAS, v) ? v : null);
 const fraccion = (v, porDefecto) => {
   const x = n(v, porDefecto);
   if (x < 0 || x >= 1) throw new HttpError(400, 'Los márgenes y comisiones deben estar entre 0 % y 99 %');
@@ -155,7 +158,7 @@ router.put('/:id', async (req, res) => {
     await tx.run(
       `UPDATE cotizaciones SET contacto = ?, fecha = ?, estado = ?, margen = ?, margen_viaticos = ?, comisiones = ?,
          comision_fija_nombre = ?, reparto_viaticos = ?, validez_dias = ?, tiempo_entrega = ?, condiciones = ?, observaciones = ?,
-         razon_social = ?, direccion_cliente = ?, referencia = ?, forma_pago = ?, actualizado_en = datetime('now') WHERE id = ?`,
+         razon_social = ?, direccion_cliente = ?, referencia = ?, forma_pago = ?, moneda = ?, actualizado_en = datetime('now') WHERE id = ?`,
       t(b.contacto, 200),
       convertir(b.fecha, 'date') || hoy(),
       estado,
@@ -169,6 +172,7 @@ router.put('/:id', async (req, res) => {
       t(b.condiciones),
       t(b.observaciones),
       ...CAMPOS_CLIENTE.map(([campo, max]) => t(b[campo], max)),
+      monedaValida(b.moneda),
       actual.id
     );
     await tx.run('DELETE FROM cotizacion_lineas WHERE pieza_id IN (SELECT id FROM cotizacion_piezas WHERE cotizacion_id = ?)', actual.id);
@@ -248,10 +252,10 @@ router.post('/unir', async (req, res) => {
     const numero = await tx.value('SELECT COALESCE(MAX(numero), 0) + 1 FROM cotizaciones');
     const { lastInsertRowid: nuevaId } = await tx.run(
       `INSERT INTO cotizaciones (numero, trabajo_id, contacto, fecha, estado, margen, margen_viaticos, comisiones, comision_fija_nombre,
-         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, razon_social, direccion_cliente, referencia, forma_pago, observaciones, origenes, creado_por)
-       VALUES (?, ?, ?, ?, 'aprobada', ?, ?, ?, ?, 'proporcional', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, razon_social, direccion_cliente, referencia, forma_pago, moneda, observaciones, origenes, creado_por)
+       VALUES (?, ?, ?, ?, 'aprobada', ?, ?, ?, ?, 'proporcional', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       numero, trabajoId, base.contacto, hoy(), base.margen, base.margen_viaticos, JSON.stringify(base.comisiones), base.comision_fija_nombre,
-      base.validez_dias, base.tiempo_entrega, base.condiciones, ...CAMPOS_CLIENTE.map(([campo]) => base[campo]),
+      base.validez_dias, base.tiempo_entrega, base.condiciones, ...CAMPOS_CLIENTE.map(([campo]) => base[campo]), base.moneda,
       `Cotización consolidada con las piezas aprobadas de ${fuentes.map((c) => c.codigo).join(', ')}.`,
       JSON.stringify(fuentes.map((c) => c.codigo)),
       req.usuario.id
@@ -300,10 +304,10 @@ router.post('/:id/duplicar', async (req, res) => {
     const numero = await tx.value('SELECT COALESCE(MAX(numero), 0) + 1 FROM cotizaciones');
     const { lastInsertRowid } = await tx.run(
       `INSERT INTO cotizaciones (numero, trabajo_id, contacto, fecha, margen, margen_viaticos, comisiones, comision_fija_nombre,
-         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, razon_social, direccion_cliente, referencia, forma_pago, observaciones, creado_por)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         reparto_viaticos, validez_dias, tiempo_entrega, condiciones, razon_social, direccion_cliente, referencia, forma_pago, moneda, observaciones, creado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       numero, c.trabajo_id, c.contacto, hoy(), c.margen, c.margen_viaticos, JSON.stringify(c.comisiones), c.comision_fija_nombre,
-      c.reparto_viaticos, c.validez_dias, c.tiempo_entrega, c.condiciones, ...CAMPOS_CLIENTE.map(([campo]) => c[campo]), c.observaciones, req.usuario.id
+      c.reparto_viaticos, c.validez_dias, c.tiempo_entrega, c.condiciones, ...CAMPOS_CLIENTE.map(([campo]) => c[campo]), c.moneda, c.observaciones, req.usuario.id
     );
     for (const p of c.piezas) {
       const { lastInsertRowid: piezaId } = await tx.run(
@@ -479,6 +483,7 @@ router.patch('/:id/textos-cliente', async (req, res) => {
     for (const [campo, max] of [['tiempo_entrega', 300], ['condiciones', 2000], ...CAMPOS_CLIENTE]) {
       if (campo in b) await tx.run(`UPDATE cotizaciones SET ${campo} = ? WHERE id = ?`, t(b[campo], max), c.id);
     }
+    if ('moneda' in b) await tx.run('UPDATE cotizaciones SET moneda = ? WHERE id = ?', monedaValida(b.moneda), c.id);
     await tx.run("UPDATE cotizaciones SET actualizado_en = datetime('now') WHERE id = ?", c.id);
   });
   res.json({ ok: true });
@@ -528,7 +533,11 @@ router.get('/:id/cliente', async (req, res) => {
   .nota { display: flex; gap: 6px; flex-wrap: wrap; } .nota > b { flex: none; }
   .nota .editable { flex: 1; min-width: 200px; white-space: pre-line; }
   .terminos { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; margin: 18px 0 10px; align-items: center; }
-  .terminos .moneda { background: #fff200; padding: 3px 4px; justify-self: start; }
+  .terminos .moneda { background: #fff200; padding: 3px 4px; display: inline-flex; align-items: center; gap: 4px; }
+  .moneda-campo [data-moneda-texto] { display: none; }
+  .moneda-campo select { font: inherit; font-weight: 800; text-transform: uppercase; border: 1px solid #b8a800; border-radius: 4px; background: #fffbe0; padding: 1px 2px; cursor: pointer; color: #111; }
+  .moneda-campo.sin-elegir .moneda { background: #fff; outline: 2px dashed #dc2626; outline-offset: 1px; }
+  .moneda-campo.sin-elegir select { border-color: #dc2626; color: #dc2626; background: #fff; }
   .terminos .pago { display: flex; gap: 5px; }
   .pie { margin: 0 4% 8px; background: #000; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 8px 18px; font-size: 10.5px; line-height: 1.6; position: relative; }
   .pie::after { content: ""; position: absolute; left: 0; bottom: -5px; width: 75%; height: 5px; background: linear-gradient(90deg, #fcc127 0 33.3%, #e02d8b 33.3% 66.6%, #2197d4 66.6%); }
@@ -549,6 +558,7 @@ router.get('/:id/cliente', async (req, res) => {
     body { background: #fff; } .hoja { box-shadow: none; margin: 0; max-width: none; padding: 0; } .acciones { display: none; }
     .items tbody tr { break-inside: avoid; }
     .editable { background: none !important; box-shadow: none !important; } .editable:empty, .nota.sin-texto { display: none; }
+    .moneda-campo select { display: none; } .moneda-campo [data-moneda-texto] { display: inline; } .moneda-campo.sin-elegir { visibility: hidden; }
   }
   @media (max-width: 640px) {
     .hoja { padding: 10px; } .cabecera { flex-direction: column; align-items: flex-start; padding: 20px; } .cabecera .rif { margin-bottom: 8px; }
@@ -559,7 +569,7 @@ router.get('/:id/cliente', async (req, res) => {
   }
 </style></head><body>
 <div class="acciones">
-  <span class="ayuda">✏️ Haz clic sobre los textos (cliente, dirección, referencia, piezas, forma de pago…) para corregirlos. Se guardan en la cotización.</span>
+  <span class="ayuda">✏️ Haz clic sobre los textos (cliente, dirección, referencia, piezas, forma de pago…) para corregirlos y elige la moneda de pago. Se guardan en la cotización.</span>
   <span><span class="estado" id="estado"></span><button type="button" id="imprimir">Imprimir / Guardar como PDF</button></span>
 </div>
 <div class="hoja">
@@ -583,7 +593,13 @@ router.get('/:id/cliente', async (req, res) => {
   <tfoot><tr><td>
   <div class="terminos">
     <div class="pago">Forma de pago: ${editable('forma_pago', c.forma_pago ?? 'CONTADO', 'Contado', 'span')}</div>
-    <div class="moneda">Moneda: Divisas</div>
+    <div class="moneda-campo ${c.moneda ? '' : 'sin-elegir'}">
+      <span class="moneda">Moneda: <span data-moneda-texto>${esc(MONEDAS[c.moneda] || '')}</span>
+        <select data-moneda aria-label="Moneda de pago">
+          <option value="">Elegir…</option>
+          ${Object.entries(MONEDAS).map(([k, v]) => `<option value="${k}" ${c.moneda === k ? 'selected' : ''}>${v}</option>`).join('')}
+        </select></span>
+    </div>
     <div>No incluye IVA</div>
   </div>
   <div class="pie">
@@ -664,7 +680,25 @@ router.get('/:id/cliente', async (req, res) => {
     // Enter en los textos de una línea no crea una línea nueva
     if (['nombre', 'razon_social', 'referencia', 'forma_pago'].includes(el.dataset.campo)) el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
   });
+  // Moneda de pago: se guarda al elegirla.
+  const selMoneda = document.querySelector('[data-moneda]');
+  selMoneda.addEventListener('change', () => {
+    const campoMoneda = selMoneda.closest('.moneda-campo');
+    campoMoneda.classList.toggle('sin-elegir', !selMoneda.value);
+    campoMoneda.querySelector('[data-moneda-texto]').textContent = selMoneda.value ? selMoneda.selectedOptions[0].textContent : '';
+    pintar('pendiente', 'Guardando…');
+    guardando = guardando
+      .then(() => fetch(location.pathname.replace(/\\/cliente$/, '/textos-cliente'), {
+        method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ moneda: selMoneda.value }),
+      }))
+      .then((r) => { if (!r.ok) throw new Error(); pintar('', '✓ Moneda guardada'); })
+      .catch(() => pintar('error', 'No se pudo guardar la moneda. Revisa tu sesión e inténtalo de nuevo.'));
+  });
   document.getElementById('imprimir').addEventListener('click', async () => {
+    if (!selMoneda.value && !confirm('No elegiste la moneda de pago (Divisas o Bolívares). ¿Imprimir sin indicarla?')) {
+      selMoneda.focus();
+      return;
+    }
     clearTimeout(temporizador);
     document.activeElement?.blur();
     await guardar();

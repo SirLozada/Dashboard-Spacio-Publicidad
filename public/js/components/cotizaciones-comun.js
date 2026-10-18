@@ -299,6 +299,10 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
           <label class="field"><span>Referencia</span>${campoTxt('data-campo="referencia"', doc.referencia, `placeholder="${esc(doc.tienda || 'Tienda o proyecto')}"`)}</label>
           <label class="field full"><span>Dirección del cliente</span>${campoTxt('data-campo="direccion_cliente"', doc.direccion_cliente, 'placeholder="Dirección fiscal del cliente"')}</label>
           <label class="field"><span>Forma de pago</span>${campoTxt('data-campo="forma_pago"', doc.forma_pago, 'placeholder="CONTADO"')}</label>
+          <label class="field"><span>Moneda de pago</span><select class="input" data-campo="moneda">
+            <option value="">Elegir…</option>
+            <option value="divisas" ${doc.moneda === 'divisas' ? 'selected' : ''}>Divisas</option>
+            <option value="bolivares" ${doc.moneda === 'bolivares' ? 'selected' : ''}>Bolívares</option></select></label>
           <label class="field"><span>Tiempo de entrega</span>${campoTxt('data-campo="tiempo_entrega"', doc.tiempo_entrega, 'placeholder="Ej. 15 días hábiles tras la aprobación"')}</label>
           <label class="field"><span>Validez de la oferta (días)</span>${campoNum('data-campo="validez_dias"', doc.validez_dias)}</label>
           <label class="field full"><span>Condiciones</span><textarea class="input" rows="3" data-campo="condiciones" placeholder="Ej. 60 % de anticipo y 40 % contra entrega. Precios no incluyen IVA.">${esc(doc.condiciones || '')}</textarea></label>
@@ -471,7 +475,7 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
           cambio = true;
         }
       };
-      for (const campo of ['tiempo_entrega', 'condiciones', 'razon_social', 'direccion_cliente', 'referencia', 'forma_pago']) igualar(doc, actual, campo);
+      for (const campo of ['tiempo_entrega', 'condiciones', 'razon_social', 'direccion_cliente', 'referencia', 'forma_pago', 'moneda']) igualar(doc, actual, campo);
       doc.piezas.forEach((p, i) => {
         if (!actual.piezas[i]) return;
         igualar(p, actual.piezas[i], 'nombre');
