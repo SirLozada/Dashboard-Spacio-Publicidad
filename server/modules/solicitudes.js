@@ -5,6 +5,7 @@ const { db } = require('../db');
 const config = require('../config');
 const almacen = require('../lib/almacen');
 const { notificar } = require('../lib/notificaciones');
+const { revisarAvisos } = require('../lib/avisos');
 const { HttpError, convertir, likeParam } = require('../lib/util');
 
 const TIPOS = Object.fromEntries(config.SOLICITUD_TIPOS.map((t) => [t.key, t.label]));
@@ -507,7 +508,7 @@ notificaciones.get('/', async (req, res) => {
        FROM notificaciones n
        LEFT JOIN usuarios a ON a.id = n.actor_id
        LEFT JOIN solicitudes s ON s.id = n.solicitud_id
-       LEFT JOIN trabajos t ON t.id = s.trabajo_id
+       LEFT JOIN trabajos t ON t.id = COALESCE(s.trabajo_id, n.trabajo_id)
        WHERE n.usuario_id = ? ORDER BY n.id DESC LIMIT ?`,
       req.usuario.id,
       limite
@@ -521,6 +522,8 @@ notificaciones.get('/', async (req, res) => {
 });
 
 notificaciones.get('/conteo', async (req, res) => {
+  // Avisos automáticos de «Mi día» (tareas y compromisos vencidos), sin repetir.
+  await revisarAvisos(req.usuario).catch((err) => console.error('Avisos automáticos:', err.message));
   const r = await db.get('SELECT COUNT(*) AS no_leidas, MAX(id) AS ultima FROM notificaciones WHERE usuario_id = ? AND leida = 0', req.usuario.id);
   res.json({ no_leidas: r.no_leidas || 0, ultima: r.ultima || 0 });
 });

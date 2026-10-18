@@ -14,6 +14,7 @@ export default {
     let filtro = { estatus: null, alerta: null };
 
     vista.innerHTML = `
+      <a class="md-banner" href="#/mi-dia" id="mi-dia-banner" hidden></a>
       <div class="cards" id="cards"></div>
       <div class="alerts" id="alerts"></div>
       <section class="panel">
@@ -89,6 +90,17 @@ export default {
     $('#btn-nuevo').addEventListener('click', () => abrirFicha(null, { alCerrar: cargar }));
     conectarTabla($('#tabla'), { alCambiar: cargar, obtenerTrabajo: (id) => trabajos.find((t) => t.id === id) });
 
+    // Acceso a «Mi día» con lo pendiente del usuario.
+    api('/mi-dia/resumen')
+      .then((r) => {
+        const b = $('#mi-dia-banner');
+        const partes = [`${r.hoy} ${r.hoy === 1 ? 'asunto para hoy' : 'asuntos para hoy'}`];
+        if (r.atrasados) partes.push(`<b class="late">${r.atrasados} ${r.atrasados === 1 ? 'atrasado' : 'atrasados'}</b>`);
+        if (r.atencion) partes.push(`<b>${r.atencion} ${r.atencion === 1 ? 'requiere' : 'requieren'} tu atención</b>`);
+        b.innerHTML = `${icon('sol')}<span><strong>Mi día</strong> · ${partes.join(' · ')}</span><span class="md-banner-ir">Abrir ›</span>`;
+        b.hidden = false;
+      })
+      .catch(() => {});
     await cargar();
   },
 };

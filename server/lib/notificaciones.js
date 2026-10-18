@@ -15,7 +15,8 @@ async function usuariosConAcceso(tx, ids /* , trabajoId */) {
 }
 
 // destinos: [{ usuarioId, tipo, titulo, mensaje }] en orden de prioridad.
-async function notificar(tx, { destinos, solicitudId, trabajoId, actorId }) {
+// La notificación abre la solicitud, la tarea o (con enlazarTrabajo) el proyecto.
+async function notificar(tx, { destinos, solicitudId = null, tareaId = null, trabajoId = null, enlazarTrabajo = false, actorId = null }) {
   const porUsuario = new Map();
   for (const d of destinos) {
     if (!d.usuarioId || d.usuarioId === actorId || porUsuario.has(d.usuarioId)) continue;
@@ -26,9 +27,11 @@ async function notificar(tx, { destinos, solicitudId, trabajoId, actorId }) {
   for (const d of porUsuario.values()) {
     if (!permitidos.has(d.usuarioId)) continue;
     await tx.run(
-      'INSERT INTO notificaciones (usuario_id, solicitud_id, tipo, titulo, mensaje, actor_id) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO notificaciones (usuario_id, solicitud_id, tarea_id, trabajo_id, tipo, titulo, mensaje, actor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       d.usuarioId,
       solicitudId,
+      tareaId,
+      enlazarTrabajo ? trabajoId : null,
       d.tipo,
       String(d.titulo).slice(0, 200),
       d.mensaje ? String(d.mensaje).slice(0, 300) : null,

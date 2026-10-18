@@ -11,6 +11,7 @@ const usuarios = require('./modules/usuarios');
 const pagos = require('./modules/pagos');
 const solicitudes = require('./modules/solicitudes');
 const cotizaciones = require('./modules/cotizaciones');
+const miDia = require('./modules/mi-dia');
 const almacen = require('./lib/almacen');
 const { importacionInicial } = require('./importar');
 
@@ -119,6 +120,7 @@ const MODULOS = [
   { ruta: '/api/cotizaciones', router: cotizaciones.router, soloAdmin: true },
   { ruta: '/api/solicitudes', router: solicitudes.router },
   { ruta: '/api/notificaciones', router: solicitudes.notificaciones },
+  { ruta: '/api/mi-dia', router: miDia.router },
 ];
 for (const m of MODULOS) {
   app.use(m.ruta, ...privado, ...(m.soloAdmin ? [auth.requiereAdmin] : []), m.router);

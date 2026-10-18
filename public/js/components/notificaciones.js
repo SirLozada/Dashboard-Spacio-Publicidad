@@ -5,9 +5,14 @@ import { api } from '../api.js';
 import { icon } from '../icons.js';
 import { esc, toast } from '../ui.js';
 import { detalleSolicitud, tiempoRelativo } from './solicitudes-comun.js';
+import { abrirTarea } from './mi-dia-comun.js';
+import { abrirFicha } from './trabajos-comun.js';
 
 const INTERVALO_MS = 20000;
-const ICONOS = { nueva: 'mensaje', asignada: 'user', comentario: 'mensaje', mencion: 'arroba', estado: 'refrescar', aprobacion: 'alert', aprobada: 'check', rechazada: 'x' };
+const ICONOS = {
+  nueva: 'mensaje', asignada: 'user', comentario: 'mensaje', mencion: 'arroba', estado: 'refrescar', aprobacion: 'alert', aprobada: 'check', rechazada: 'x',
+  tarea_asignada: 'check', tarea_reasignada: 'user', recordatorio: 'clock', vencido: 'alert',
+};
 
 let temporizador = null;
 let ultimaVista = 0;
@@ -42,7 +47,7 @@ async function pintarPanel() {
       items.length
         ? items
             .map(
-              (n) => `<button type="button" class="notif ${n.leida ? '' : 'no-leida'}" data-notif="${n.id}" data-solicitud="${n.solicitud_id || ''}">
+              (n) => `<button type="button" class="notif ${n.leida ? '' : 'no-leida'}" data-notif="${n.id}" data-solicitud="${n.solicitud_id || ''}" data-tarea="${n.tarea_id || ''}" data-trabajo="${n.trabajo_id || ''}">
                 <span class="notif-icono tipo-${n.tipo}">${icon(ICONOS[n.tipo] || 'campana')}</span>
                 <span class="notif-texto"><strong>${esc(n.titulo)}</strong>
                   ${n.mensaje ? `<span>${esc(n.mensaje)}</span>` : ''}
@@ -93,6 +98,8 @@ export function iniciarCampana() {
       cerrarPanel();
       consultar({ avisar: false });
       if (n.dataset.solicitud) detalleSolicitud(Number(n.dataset.solicitud), { alCambiar: () => consultar({ avisar: false }) });
+      else if (n.dataset.tarea) abrirTarea(Number(n.dataset.tarea));
+      else if (n.dataset.trabajo) abrirFicha(Number(n.dataset.trabajo)).catch((err) => toast(err.message, 'error'));
     });
     document.addEventListener('click', (e) => {
       if (!panel.hidden && !panel.contains(e.target)) cerrarPanel();

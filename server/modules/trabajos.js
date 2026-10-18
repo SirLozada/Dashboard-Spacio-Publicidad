@@ -308,6 +308,10 @@ router.delete('/:id', requiereAdmin, async (req, res) => {
   await db.transaction(async (tx) => {
     await tx.run('DELETE FROM adjuntos WHERE trabajo_id = ?', id);
     await tx.run('DELETE FROM trabajo_pendientes WHERE trabajo_id = ?', id);
+    // Las tareas y notas de «Mi día» se conservan, sin el vínculo al proyecto.
+    await tx.run('UPDATE tareas SET trabajo_id = NULL WHERE trabajo_id = ?', id);
+    await tx.run('UPDATE notas_personales SET trabajo_id = NULL WHERE trabajo_id = ?', id);
+    await tx.run('DELETE FROM notificaciones WHERE trabajo_id = ?', id);
     await tx.run('DELETE FROM trabajos WHERE id = ?', id);
   });
   await Promise.all(archivos.map(almacen.borrar));

@@ -10,11 +10,12 @@ import usuarios from './modules/usuarios.js';
 import pagos from './modules/pagos.js';
 import solicitudes from './modules/solicitudes.js';
 import cotizaciones from './modules/cotizaciones.js';
+import miDia from './modules/mi-dia.js';
 import { iniciarCampana, detenerCampana } from './components/notificaciones.js';
 
 // Registro de módulos del frontend. Para agregar un módulo nuevo basta con
 // crear su archivo en js/modules (con id, titulo, icono y render) y añadirlo aquí.
-const MODULOS = [dashboard, trabajos, solicitudes, cotizaciones, pagos, materiales, proveedores, usuarios];
+const MODULOS = [dashboard, miDia, trabajos, solicitudes, cotizaciones, pagos, materiales, proveedores, usuarios];
 
 const $ = (sel) => document.querySelector(sel);
 let limpiarVista = null;

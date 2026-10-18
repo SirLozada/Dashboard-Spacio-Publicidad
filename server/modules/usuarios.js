@@ -83,6 +83,9 @@ router.delete('/:id', async (req, res) => {
     u.id,
     u.id
   );
+  if (!conPagos && (await db.value('SELECT 1 FROM tareas WHERE (creado_por = ? OR asignado_a = ?) LIMIT 1', u.id, u.id))) {
+    throw new HttpError(400, 'Este usuario tiene tareas registradas en «Mi día» y se conserva en el historial. Puedes desactivarlo para que no ingrese.');
+  }
   if (conPagos) {
     throw new HttpError(400, 'Este usuario tiene pagos o solicitudes registradas y se conserva en el historial. Puedes desactivarlo para que no ingrese.');
   }
@@ -96,6 +99,9 @@ router.delete('/:id', async (req, res) => {
     await tx.run('DELETE FROM solicitud_destinatarios WHERE usuario_id = ?', u.id);
     await tx.run('DELETE FROM notificaciones WHERE usuario_id = ?', u.id);
     await tx.run('UPDATE notificaciones SET actor_id = NULL WHERE actor_id = ?', u.id);
+    await tx.run('UPDATE tareas SET actualizado_por = NULL WHERE actualizado_por = ?', u.id);
+    await tx.run('DELETE FROM notas_personales WHERE usuario_id = ?', u.id);
+    await tx.run('DELETE FROM avisos_enviados WHERE usuario_id = ?', u.id);
     await tx.run('DELETE FROM usuarios WHERE id = ?', u.id);
   });
   res.json({ ok: true });
