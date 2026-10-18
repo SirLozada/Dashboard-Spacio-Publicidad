@@ -142,6 +142,43 @@ test('orden de producción: PDF sólo para proyectos aprobados y sin montos', as
   assert.strictEqual(pdf.datos.subarray(0, 5).toString(), '%PDF-');
 });
 
+test('etiquetar personas en una tarea: la ven, reciben un aviso y sólo agregan observaciones', async () => {
+  const pedro = cliente();
+  const idPedro = (await fernando('/usuarios', { method: 'POST', body: { usuario: 'pedro', nombre: 'Pedro Ruiz', password: 'temporal123' } })).datos.id;
+  await pedro('/auth/login', { method: 'POST', body: { usuario: 'pedro', password: 'temporal123' } });
+  await pedro('/auth/cambiar-password', { method: 'POST', body: { actual: 'temporal123', nueva: 'nueva-clave-1' } });
+  const antesAna = (await ana('/notificaciones')).datos.items.length;
+
+  // Asignada a Ana, con Pedro etiquetado; Ana no recibe dos avisos aunque también se la etiquete.
+  const t = (await fernando('/mi-dia/tareas', { method: 'POST', body: { titulo: 'Confirmar transporte', fecha: h, asignado_a: idAna, etiquetados: [idPedro, idAna] } })).datos;
+  assert.deepStrictEqual(t.etiquetados.map((e) => e.nombre), ['Pedro Ruiz']);
+  assert.strictEqual((await ana('/notificaciones')).datos.items.length, antesAna + 1);
+  const avisoPedro = (await pedro('/notificaciones')).datos.items[0];
+  assert.strictEqual(avisoPedro.tipo, 'tarea_etiqueta');
+  assert.strictEqual(avisoPedro.tarea_id, t.id);
+
+  // Pedro la ve en su «Mi día», pero no cuenta como tarea suya pendiente.
+  const dia = (await pedro('/mi-dia')).datos;
+  const item = dia.secciones.hoy.find((i) => i.id === t.id);
+  assert.ok(item && item.soy_etiquetado && item.puede_editar === false);
+  assert.strictEqual(dia.resumen.pendientes, 0);
+
+  // Sólo puede agregar observaciones.
+  assert.strictEqual((await pedro(`/mi-dia/tareas/${t.id}`, { method: 'PATCH', body: { estado: 'completada' } })).status, 403);
+  assert.strictEqual((await pedro(`/mi-dia/tareas/${t.id}`, { method: 'PATCH', body: { observaciones: 'El camión sale a las 7' } })).status, 200);
+
+  // Mencionar con @ en las observaciones también etiqueta (y avisa una sola vez).
+  await ana(`/mi-dia/tareas/${t.id}`, { method: 'PATCH', body: { observaciones: 'Confirmado. @fernando revisa la factura' } });
+  const conFernando = (await ana(`/mi-dia/tareas/${t.id}`)).datos.etiquetados.map((e) => e.id);
+  assert.ok(conFernando.includes(1) && conFernando.includes(idPedro));
+  const avisos = (await fernando('/notificaciones')).datos.items.filter((n) => n.tipo === 'tarea_etiqueta' && n.tarea_id === t.id);
+  assert.strictEqual(avisos.length, 1);
+
+  // Quitar la etiqueta: deja de verla.
+  await fernando(`/mi-dia/tareas/${t.id}`, { method: 'PATCH', body: { etiquetados: [] } });
+  assert.strictEqual((await pedro(`/mi-dia/tareas/${t.id}`)).status, 404);
+});
+
 test('al eliminar un usuario con tareas se conserva el historial', async () => {
   assert.strictEqual((await fernando(`/usuarios/${idAna}`, { method: 'DELETE' })).status, 400);
 });

@@ -6,6 +6,7 @@ const config = require('../config');
 const almacen = require('../lib/almacen');
 const { notificar } = require('../lib/notificaciones');
 const { revisarAvisos } = require('../lib/avisos');
+const { mencionados } = require('../lib/menciones');
 const { HttpError, convertir, likeParam } = require('../lib/util');
 
 const TIPOS = Object.fromEntries(config.SOLICITUD_TIPOS.map((t) => [t.key, t.label]));
@@ -69,17 +70,6 @@ async function leerDestinatarios(lista) {
   if (!ids.length) return [];
   const validos = await db.column(`SELECT id FROM usuarios WHERE activo = 1 AND id IN (${ids.map(() => '?').join(',')})`, ...ids);
   return ids.filter((id) => validos.includes(id));
-}
-
-// Usuarios mencionados con @usuario o @Nombre en un texto.
-async function mencionados(mensaje) {
-  const quitarAcentos = (t) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const marcas = [...String(mensaje).matchAll(/@([\p{L}\d._-]+)/gu)].map((m) => quitarAcentos(m[1]).replace(/[._-]+$/, ''));
-  if (!marcas.length) return [];
-  const usuarios = await db.all('SELECT id, usuario, nombre FROM usuarios WHERE activo = 1');
-  return usuarios
-    .filter((u) => marcas.some((m) => m === quitarAcentos(u.usuario) || m === quitarAcentos(u.nombre.split(/\s+/)[0]) || m === quitarAcentos(u.nombre.replace(/\s+/g, ''))))
-    .map((u) => u.id);
 }
 
 const evento = (tx, solicitudId, usuarioId, mensaje) =>

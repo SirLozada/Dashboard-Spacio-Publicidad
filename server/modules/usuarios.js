@@ -101,6 +101,8 @@ router.delete('/:id', async (req, res) => {
     await tx.run('UPDATE notificaciones SET actor_id = NULL WHERE actor_id = ?', u.id);
     await tx.run('UPDATE tareas SET actualizado_por = NULL WHERE actualizado_por = ?', u.id);
     await tx.run('DELETE FROM notas_personales WHERE usuario_id = ?', u.id);
+    await tx.run('DELETE FROM tarea_etiquetados WHERE usuario_id = ?', u.id);
+    await tx.run('UPDATE tarea_etiquetados SET agregado_por = NULL WHERE agregado_por = ?', u.id);
     await tx.run('DELETE FROM avisos_enviados WHERE usuario_id = ?', u.id);
     await tx.run('DELETE FROM usuarios WHERE id = ?', u.id);
   });

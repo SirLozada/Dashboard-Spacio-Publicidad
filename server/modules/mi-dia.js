@@ -7,6 +7,7 @@ const config = require('../config');
 const compromisos = require('../lib/compromisos');
 const estatus = require('../lib/estatus');
 const { notificar } = require('../lib/notificaciones');
+const { mencionados } = require('../lib/menciones');
 const { HttpError, hoy, sumarDias, convertir } = require('../lib/util');
 
 const PRIORIDADES = ['normal', 'alta', 'urgente'];
@@ -29,7 +30,9 @@ const lista = (n) => config.SOLICITUD_ESTADOS.filter((e) => n.includes(e.key)).m
 
 const SELECT_TAREA = `
   SELECT ta.*, t.numero AS trabajo_numero, t.cliente AS trabajo_cliente, t.tienda AS trabajo_tienda,
-    ua.nombre AS asignado_nombre, uc.nombre AS creado_por_nombre
+    ua.nombre AS asignado_nombre, uc.nombre AS creado_por_nombre,
+    (SELECT json_group_array(json_object('id', ue.id, 'nombre', ue.nombre)) FROM tarea_etiquetados e
+       JOIN usuarios ue ON ue.id = e.usuario_id WHERE e.tarea_id = ta.id) AS etiquetados_json
   FROM tareas ta
   LEFT JOIN trabajos t ON t.id = ta.trabajo_id
   LEFT JOIN usuarios ua ON ua.id = ta.asignado_a
@@ -41,7 +44,15 @@ const SELECT_NOTA = `
 
 const proyecto = (numero, cliente) => (numero ? `${numeroTrabajo(numero)} · ${cliente}` : null);
 
+// Tareas que el usuario ve: las suyas (responsable), las que creó y en las que lo etiquetaron.
+const VISIBLE = `(ta.asignado_a = ? OR ta.creado_por = ? OR EXISTS (SELECT 1 FROM tarea_etiquetados e WHERE e.tarea_id = ta.id AND e.usuario_id = ?))`;
+// En «Mi día» y la agenda: las que tiene a cargo y en las que lo etiquetaron.
+const EN_MI_DIA = `(ta.asignado_a = ? OR EXISTS (SELECT 1 FROM tarea_etiquetados e WHERE e.tarea_id = ta.id AND e.usuario_id = ?))`;
+
 function itemTarea(ta, usuario, h) {
+  const etiquetados = JSON.parse(ta.etiquetados_json || '[]');
+  // Responsable y creador gestionan la tarea; los etiquetados sólo agregan observaciones.
+  const aCargo = ta.asignado_a === usuario.id || ta.creado_por === usuario.id || esAdmin(usuario);
   return {
     clave: `tarea:${ta.id}`,
     origen: 'tarea',
@@ -63,6 +74,9 @@ function itemTarea(ta, usuario, h) {
     completada_fecha: ta.completada_fecha,
     archivada: !!ta.archivada,
     actualizado_en: ta.actualizado_en,
+    etiquetados,
+    soy_etiquetado: ta.asignado_a !== usuario.id && etiquetados.some((e) => e.id === usuario.id),
+    puede_editar: aCargo,
     // Quién puede reasignar y eliminar: quien la creó o un administrador.
     puede_gestionar: ta.creado_por === usuario.id || esAdmin(usuario),
   };
@@ -86,8 +100,9 @@ function itemNota(n) {
 async function obtenerTarea(id, usuario) {
   const ta = await db.get(`${SELECT_TAREA} WHERE ta.id = ?`, id);
   if (!ta) throw new HttpError(404, 'Tarea no encontrada');
-  // Sólo la ven quien la creó y la persona asignada.
-  if (ta.creado_por !== usuario.id && ta.asignado_a !== usuario.id) throw new HttpError(404, 'Tarea no encontrada');
+  // Sólo la ven quien la creó, la persona asignada y quienes fueron etiquetados.
+  const etiquetado = JSON.parse(ta.etiquetados_json || '[]').some((e) => e.id === usuario.id);
+  if (ta.creado_por !== usuario.id && ta.asignado_a !== usuario.id && !etiquetado) throw new HttpError(404, 'Tarea no encontrada');
   return ta;
 }
 
@@ -196,7 +211,8 @@ async function miDia(usuario, fecha) {
 
   const [tareas, notas, auto, recibidas] = await Promise.all([
     db.all(
-      `${SELECT_TAREA} WHERE ta.asignado_a = ? AND ta.archivada = 0 AND (ta.estado <> 'completada' OR ta.completada_fecha = ?)`,
+      `${SELECT_TAREA} WHERE ${EN_MI_DIA} AND ta.archivada = 0 AND (ta.estado <> 'completada' OR ta.completada_fecha = ?)`,
+      usuario.id,
       usuario.id,
       d
     ),
@@ -224,6 +240,7 @@ async function miDia(usuario, fecha) {
       atencion.push({ ...it, etiqueta: `Te la asignó ${ta.creado_por_nombre || 'otro usuario'}` });
       continue;
     }
+    if (it.soy_etiquetado) it.etiqueta = `Te etiquetó ${ta.creado_por === usuario.id ? 'tú mismo' : ta.creado_por_nombre || 'otro usuario'}`;
     if (it.vencido) atrasados.push(it);
     else if (!ta.fecha || ta.fecha === d) hoyLista.push(it);
     else if (ta.fecha > d && ta.fecha <= finProximos) proximos.push(it);
@@ -247,7 +264,8 @@ async function miDia(usuario, fecha) {
   [hoyLista, atrasados, proximos, atencion].forEach((l) => l.sort(ordenar));
   completados.sort((a, b) => String(b.actualizado_en).localeCompare(String(a.actualizado_en)));
 
-  const tareasPendientes = tareas.filter((t) => t.estado !== 'completada' && (!t.fecha || t.fecha <= d)).length;
+  // Pendientes: sólo las que tiene a cargo (no las tareas en que lo etiquetaron).
+  const tareasPendientes = tareas.filter((t) => t.asignado_a === usuario.id && t.estado !== 'completada' && (!t.fecha || t.fecha <= d)).length;
   return {
     fecha: d,
     hoy: h,
@@ -283,7 +301,7 @@ router.get('/agenda', async (req, res) => {
   const hasta = fechaValida(req.query.hasta) || sumarDias(h, 30);
   const enRango = (f) => f && (desde ? f >= desde : f >= h) && f <= hasta;
   const [tareas, notas, auto] = await Promise.all([
-    db.all(`${SELECT_TAREA} WHERE ta.asignado_a = ? AND ta.archivada = 0 AND ta.fecha IS NOT NULL`, req.usuario.id),
+    db.all(`${SELECT_TAREA} WHERE ${EN_MI_DIA} AND ta.archivada = 0 AND ta.fecha IS NOT NULL`, req.usuario.id, req.usuario.id),
     db.all(`${SELECT_NOTA} WHERE n.usuario_id = ? AND n.archivada = 0 AND n.fecha IS NOT NULL`, req.usuario.id),
     pendientesAutomaticos(req.usuario, hasta),
   ]);
@@ -335,20 +353,44 @@ async function leerTarea(b, usuario, actual = null) {
   return datos;
 }
 
-const avisoAsignacion = (tx, ta, actor, tipo) =>
-  notificar(tx, {
-    destinos: [
-      {
-        usuarioId: ta.asignado_a,
-        tipo,
-        titulo: `${actor.nombre} ${tipo === 'tarea_reasignada' ? 'te reasignó' : 'te asignó'} una tarea`,
-        mensaje: `${ta.titulo}${ta.fecha ? ` · para el ${ta.fecha.split('-').reverse().join('/')}` : ''}`,
-      },
-    ],
-    tareaId: ta.id,
-    trabajoId: ta.trabajo_id,
-    actorId: actor.id,
-  });
+// Personas a etiquetar: las elegidas más las mencionadas con @ en los textos.
+// Devuelve null si no hay cambios que aplicar (no se enviaron ni hay menciones nuevas).
+async function leerEtiquetados(b, datos, actuales) {
+  const elegidos = Array.isArray(b.etiquetados) ? b.etiquetados.map(Number).filter(Number.isInteger) : null;
+  const textos = [b.descripcion, b.observaciones].filter((t) => typeof t === 'string').join('\n');
+  const menciones = textos ? await mencionados(textos) : [];
+  if (elegidos === null && !menciones.some((id) => !actuales.includes(id))) return null;
+  const ids = [...new Set([...(elegidos ?? actuales), ...menciones])].filter((id) => id !== datos.asignado_a);
+  if (!ids.length) return [];
+  const activos = await db.column(`SELECT id FROM usuarios WHERE activo = 1 AND id IN (${ids.map(() => '?').join(',')})`, ...ids);
+  return ids.filter((id) => activos.includes(id)).slice(0, 20);
+}
+
+async function guardarEtiquetados(tx, tareaId, ids, actorId) {
+  await tx.run('DELETE FROM tarea_etiquetados WHERE tarea_id = ?', tareaId);
+  for (const id of ids) {
+    await tx.run('INSERT INTO tarea_etiquetados (tarea_id, usuario_id, agregado_por) VALUES (?, ?, ?)', tareaId, id, actorId);
+  }
+}
+
+// Un solo aviso por persona: si la asignan y además la etiquetan, gana la asignación.
+function avisosTarea(tx, ta, actor, { asignacion = null, nuevosEtiquetados = [] }) {
+  const cuando = ta.fecha ? ` · para el ${ta.fecha.split('-').reverse().join('/')}` : '';
+  const destinos = [];
+  if (asignacion) {
+    destinos.push({
+      usuarioId: ta.asignado_a,
+      tipo: asignacion,
+      titulo: `${actor.nombre} ${asignacion === 'tarea_reasignada' ? 'te reasignó' : 'te asignó'} una tarea`,
+      mensaje: `${ta.titulo}${cuando}`,
+    });
+  }
+  for (const id of nuevosEtiquetados) {
+    destinos.push({ usuarioId: id, tipo: 'tarea_etiqueta', titulo: `${actor.nombre} te etiquetó en una tarea`, mensaje: `${ta.titulo}${cuando}` });
+  }
+  if (!destinos.length) return null;
+  return notificar(tx, { destinos, tareaId: ta.id, trabajoId: ta.trabajo_id, actorId: actor.id });
+}
 
 router.get('/tareas/:id', async (req, res) => {
   res.json(itemTarea(await obtenerTarea(req.params.id, req.usuario), req.usuario, hoy()));
@@ -357,8 +399,9 @@ router.get('/tareas/:id', async (req, res) => {
 // Historial de tareas completadas.
 router.get('/historial', async (req, res) => {
   const filas = await db.all(
-    `${SELECT_TAREA} WHERE (ta.asignado_a = ? OR ta.creado_por = ?) AND (ta.estado = 'completada' OR ta.archivada = 1)
+    `${SELECT_TAREA} WHERE ${VISIBLE} AND (ta.estado = 'completada' OR ta.archivada = 1)
      ORDER BY COALESCE(ta.completada_fecha, date(ta.actualizado_en)) DESC, ta.id DESC LIMIT 200`,
+    req.usuario.id,
     req.usuario.id,
     req.usuario.id
   );
@@ -367,6 +410,7 @@ router.get('/historial', async (req, res) => {
 
 router.post('/tareas', async (req, res) => {
   const datos = await leerTarea(req.body || {}, req.usuario);
+  const etiquetados = (await leerEtiquetados(req.body || {}, datos, [])) || [];
   const id = await db.transaction(async (tx) => {
     const { lastInsertRowid } = await tx.run(
       `INSERT INTO tareas (titulo, descripcion, observaciones, fecha, hora, prioridad, estado, trabajo_id, asignado_a, creado_por, actualizado_por, completada_fecha)
@@ -374,7 +418,11 @@ router.post('/tareas', async (req, res) => {
       datos.titulo, datos.descripcion, datos.observaciones, datos.fecha, datos.hora, datos.prioridad, datos.estado,
       datos.trabajo_id, datos.asignado_a, req.usuario.id, req.usuario.id, datos.estado === 'completada' ? hoy() : null
     );
-    if (datos.asignado_a !== req.usuario.id) await avisoAsignacion(tx, { ...datos, id: lastInsertRowid }, req.usuario, 'tarea_asignada');
+    await guardarEtiquetados(tx, lastInsertRowid, etiquetados, req.usuario.id);
+    await avisosTarea(tx, { ...datos, id: lastInsertRowid }, req.usuario, {
+      asignacion: datos.asignado_a !== req.usuario.id ? 'tarea_asignada' : null,
+      nuevosEtiquetados: etiquetados,
+    });
     return lastInsertRowid;
   });
   res.status(201).json(itemTarea(await obtenerTarea(id, req.usuario), req.usuario, hoy()));
@@ -387,7 +435,17 @@ router.patch('/tareas/:id', async (req, res) => {
   if (b.asignado_a !== undefined && Number(b.asignado_a) !== actual.asignado_a && !gestiona) {
     throw new HttpError(403, 'Sólo quien creó la tarea o un administrador puede reasignarla');
   }
+  // Quien sólo está etiquetado puede agregar observaciones, nada más.
+  if (!gestiona && actual.asignado_a !== req.usuario.id) {
+    const cambia = Object.keys(b).filter((k) => k !== 'observaciones' && String(b[k] ?? '') !== String(actual[k] ?? ''));
+    if (cambia.length) throw new HttpError(403, 'Te etiquetaron en esta tarea: puedes agregar observaciones, pero sólo el responsable o quien la creó la modifica');
+  }
   const datos = await leerTarea(b, req.usuario, actual);
+  const anteriores = JSON.parse(actual.etiquetados_json || '[]').map((e) => e.id);
+  // Si se reasigna a alguien que estaba etiquetado, deja de figurar como etiquetado.
+  const etiquetados =
+    (await leerEtiquetados(b, datos, anteriores)) ??
+    (anteriores.includes(datos.asignado_a) ? anteriores.filter((id) => id !== datos.asignado_a) : null);
   const completada = datos.estado === 'completada' ? actual.completada_fecha || hoy() : null;
   await db.transaction(async (tx) => {
     await tx.run(
@@ -396,11 +454,14 @@ router.patch('/tareas/:id', async (req, res) => {
       datos.titulo, datos.descripcion, datos.observaciones, datos.fecha, datos.hora, datos.prioridad, datos.estado, datos.trabajo_id,
       datos.asignado_a, datos.archivada, completada, req.usuario.id, actual.id
     );
-    if (datos.asignado_a !== actual.asignado_a) {
-      await avisoAsignacion(tx, { ...datos, id: actual.id }, req.usuario, 'tarea_reasignada');
-      // Las notificaciones de la tarea dejan de ser de la persona anterior.
-      await tx.run('DELETE FROM notificaciones WHERE tarea_id = ? AND usuario_id = ? AND leida = 0', actual.id, actual.asignado_a);
-    }
+    if (etiquetados) await guardarEtiquetados(tx, actual.id, etiquetados, req.usuario.id);
+    const reasignada = datos.asignado_a !== actual.asignado_a;
+    await avisosTarea(tx, { ...datos, id: actual.id }, req.usuario, {
+      asignacion: reasignada ? 'tarea_reasignada' : null,
+      nuevosEtiquetados: (etiquetados || []).filter((id) => !anteriores.includes(id)),
+    });
+    // Las notificaciones de la tarea dejan de ser de la persona anterior.
+    if (reasignada) await tx.run('DELETE FROM notificaciones WHERE tarea_id = ? AND usuario_id = ? AND leida = 0', actual.id, actual.asignado_a);
   });
   // Si quien la editó ya no es responsable ni creador, deja de verla.
   const ta = await db.get(`${SELECT_TAREA} WHERE ta.id = ?`, actual.id);

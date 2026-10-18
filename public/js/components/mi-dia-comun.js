@@ -39,6 +39,9 @@ export async function formularioTarea(tarea, { inicial = {}, alGuardar } = {}) {
   const nueva = !tarea;
   const t = tarea || { fecha: hoyIso(), prioridad: 'normal', estado: 'pendiente', asignado_a: state.usuario.id, ...inicial };
   const puedeReasignar = nueva || t.puede_gestionar;
+  // Quien sólo está etiquetado puede agregar observaciones, nada más.
+  const soloObservaciones = !nueva && t.puede_editar === false;
+  const etiquetados = new Set((t.etiquetados || []).map((e) => e.id));
   // Si el proyecto ya está cerrado no figura en la lista: se agrega para no perder el vínculo.
   const listaProyectos = t.trabajo_id && !ps.some((p) => p.id === t.trabajo_id) ? [...ps, { id: t.trabajo_id, nombre: t.proyecto || 'Proyecto vinculado' }] : ps;
 
@@ -55,15 +58,24 @@ export async function formularioTarea(tarea, { inicial = {}, alGuardar } = {}) {
         t.asignado_a
       )}
       ${campo({ name: 'trabajo_id', label: 'Proyecto relacionado (opcional)', type: 'select', options: opcionesProyecto(listaProyectos) }, t.trabajo_id ?? '')}
+      <div class="field full"><span>Etiquetar a otras personas (opcional)</span>
+        <div class="chips-etiquetar">${us
+          .filter((u) => u.id !== state.usuario.id || etiquetados.has(u.id))
+          .map(
+            (u) => `<label class="chip-etiquetar"><input type="checkbox" name="etiquetados" value="${u.id}" ${etiquetados.has(u.id) ? 'checked' : ''}><span>@${esc(u.nombre)}</span></label>`
+          )
+          .join('')}</div>
+        <small class="muted">Verán la tarea en su «Mi día», recibirán un aviso y podrán agregar observaciones. También puedes escribir @nombre en la descripción.</small></div>
       ${campo({ name: 'descripcion', label: 'Descripción (opcional)', type: 'textarea', full: true, rows: 2 }, t.descripcion)}
       ${nueva ? '' : campo({ name: 'observaciones', label: 'Observaciones', type: 'textarea', full: true, rows: 2, placeholder: 'Avances, respuestas, lo que quedó pendiente…' }, t.observaciones)}
       ${nueva ? '' : `<p class="muted nota full" style="margin:0">Creada por ${esc(t.creado_por_nombre || '—')}${t.asignado_a !== t.creado_por ? ` · asignada a ${esc(t.asignado_nombre || '—')}` : ''}</p>`}
+      ${soloObservaciones ? `<p class="aviso-cot full" style="margin:0">${icon('arroba')} Te etiquetaron en esta tarea: puedes agregar observaciones. El responsable o quien la creó es quien la modifica o la completa.</p>` : ''}
     </form>`,
     foot: `${
       nueva
         ? '<span class="left"></span><button class="btn" data-close type="button">Cancelar</button>'
         : `${t.puede_gestionar ? `<button class="btn btn-danger left" type="button" data-eliminar>${icon('trash')}Eliminar</button>` : '<span class="left"></span>'}
-           <button class="btn" type="button" data-archivar>${t.archivada ? 'Desarchivar' : 'Archivar'}</button>`
+           ${soloObservaciones ? '' : `<button class="btn" type="button" data-archivar>${t.archivada ? 'Desarchivar' : 'Archivar'}</button>`}`
     }
       <button class="btn btn-primary" type="submit" form="form-tarea">${nueva ? `${icon('plus')}Crear tarea` : 'Guardar'}</button>`,
   });
@@ -74,9 +86,28 @@ export async function formularioTarea(tarea, { inicial = {}, alGuardar } = {}) {
     form.elements.asignado_a.title = 'Sólo quien creó la tarea o un administrador puede reasignarla';
   }
   if (nueva) form.elements.titulo.focus();
+  if (soloObservaciones) {
+    form.querySelectorAll('input, select, textarea').forEach((el) => {
+      if (el.name !== 'observaciones') el.disabled = true;
+    });
+    form.elements.observaciones.focus();
+  }
 
   const enviar = async (extra = {}) => {
     const d = leerFormulario(form);
+    delete d.etiquetados;
+    if (soloObservaciones) {
+      try {
+        const r = await api(`/mi-dia/tareas/${t.id}`, { method: 'PATCH', body: { observaciones: d.observaciones } });
+        toast('Observación agregada');
+        m.close();
+        alGuardar?.(r);
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+      return;
+    }
+    d.etiquetados = [...form.querySelectorAll('[name=etiquetados]:checked')].map((c) => Number(c.value));
     if (!d.titulo?.trim()) {
       toast('Escribe el título de la tarea', 'error');
       form.elements.titulo.focus();

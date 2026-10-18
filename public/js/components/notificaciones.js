@@ -11,7 +11,7 @@ import { abrirFicha } from './trabajos-comun.js';
 const INTERVALO_MS = 20000;
 const ICONOS = {
   nueva: 'mensaje', asignada: 'user', comentario: 'mensaje', mencion: 'arroba', estado: 'refrescar', aprobacion: 'alert', aprobada: 'check', rechazada: 'x',
-  tarea_asignada: 'check', tarea_reasignada: 'user', recordatorio: 'clock', vencido: 'alert',
+  tarea_asignada: 'check', tarea_reasignada: 'user', tarea_etiqueta: 'arroba', recordatorio: 'clock', vencido: 'alert',
 };
 
 let temporizador = null;

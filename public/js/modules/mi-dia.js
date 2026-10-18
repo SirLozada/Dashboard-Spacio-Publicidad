@@ -19,13 +19,16 @@ function htmlItem(it, hoy) {
   if (it.fecha && it.fecha !== hoy) meta.push(`${icon('calendario')}${fecha(it.fecha)}`);
   if (it.hora) meta.push(`${icon('clock')}${esc(it.hora)}`);
   if (it.proyecto) meta.push(`${icon('trabajos')}${esc(it.proyecto)}`);
+  if (tarea && it.etiquetados?.length) meta.push(`${icon('arroba')}${it.etiquetados.map((e) => esc(e.nombre)).join(', ')}`);
+  if (tarea && it.soy_etiquetado) meta.push(`Responsable: ${esc(it.asignado_nombre || '—')}`);
   if (it.detalle) meta.push(esc(it.detalle));
   if (tarea && it.creado_por !== it.asignado_a && !it.etiqueta) meta.push(`Asignada por ${esc(it.creado_por_nombre || '—')}`);
   if (tarea && it.estado === 'en_proceso') meta.push('<span class="md-en-proceso">En proceso</span>');
   const extracto = it.origen === 'nota' ? it.nota : it.origen === 'tarea' ? it.descripcion : '';
   const iconoOrigen = tarea ? '' : `<span class="md-icono">${icon(it.origen === 'nota' ? 'nota' : ICONO_AUTO[it.tipo] || 'alert')}</span>`;
   return `<div class="md-item origen-${it.origen} prioridad-${it.prioridad || 'normal'} ${it.vencido ? 'vencido' : ''} ${hecha ? 'hecha' : ''}" data-clave="${esc(it.clave)}" role="button" tabindex="0">
-    ${tarea ? `<label class="md-check" data-stop title="${hecha ? 'Marcar como pendiente' : 'Marcar como completada'}"><input type="checkbox" data-completar="${it.id}" ${hecha ? 'checked' : ''}><span></span></label>` : iconoOrigen}
+    ${tarea && it.puede_editar === false ? `<span class="md-icono md-etiquetado" title="Te etiquetaron">${icon('arroba')}</span>` : ''}
+    ${tarea && it.puede_editar !== false ? `<label class="md-check" data-stop title="${hecha ? 'Marcar como pendiente' : 'Marcar como completada'}"><input type="checkbox" data-completar="${it.id}" ${hecha ? 'checked' : ''}><span></span></label>` : tarea ? '' : iconoOrigen}
     <div class="md-cuerpo">
       <div class="md-titulo">${it.vencido ? `<span class="md-vencido">${icon('alert')}Vencido</span>` : ''}${esc(it.titulo)}</div>
       ${extracto ? `<div class="md-extracto">${esc(extracto)}</div>` : ''}

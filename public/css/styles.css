@@ -641,3 +641,11 @@ table.data tr.cerrada td { color: var(--text-2); }
   .md-origen { display: none; }
   .md-lista { padding: 10px; }
 }
+.chips-etiquetar { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-etiquetar { position: relative; cursor: pointer; }
+.chip-etiquetar input { position: absolute; opacity: 0; pointer-events: none; }
+.chip-etiquetar span { display: inline-block; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface); font-size: 13px; font-weight: 600; color: var(--text-2); }
+.chip-etiquetar input:checked + span { background: color-mix(in srgb, var(--spacio-magenta) 10%, var(--surface)); border-color: var(--spacio-magenta); color: var(--spacio-magenta); }
+.chip-etiquetar input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+.chip-etiquetar input:disabled + span { opacity: .6; cursor: default; }
+.md-etiquetado { background: color-mix(in srgb, var(--spacio-magenta) 12%, var(--surface)) !important; color: var(--spacio-magenta) !important; }
