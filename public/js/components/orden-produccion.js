@@ -46,6 +46,15 @@ export async function abrirOrdenProduccion(trabajoId, { alGuardar } = {}) {
                .join('')}</ul>`
           : '<p class="muted nota">Este proyecto no tiene una cotización aprobada: indica las piezas y cantidades en las especificaciones técnicas.</p>'
       }
+      <div class="section-title">${icon('materiales')} Despiece de OpenCutList</div>
+      ${
+        datos.despiece
+          ? `<div class="orden-opciones">
+              <label class="check"><input type="checkbox" data-incluir="despiece" checked> Lista de piezas con medidas, cantidades y materiales requeridos <span class="muted">(versión ${datos.despiece.version} · ${datos.despiece.piezas} piezas · ${datos.despiece.materiales} materiales)</span></label>
+              <label class="check"><input type="checkbox" data-incluir="diagramas" ${datos.despiece.diagramas ? 'checked' : 'disabled'}> Diagramas de corte <span class="muted">(${datos.despiece.diagramas || 'no hay'})</span></label>
+            </div>`
+          : '<p class="muted nota">Este proyecto no tiene datos de OpenCutList. Puedes importarlos en la pestaña «Despieces» de la ficha.</p>'
+      }
       <div class="section-title">${icon('clip')} Renders, planos y fotografías</div>
       ${
         datos.imagenes.length
@@ -120,6 +129,7 @@ export async function abrirOrdenProduccion(trabajoId, { alGuardar } = {}) {
   const urlPdf = (descargar) => {
     const ids = [...m.el.querySelectorAll('.orden-img input:checked')].map((c) => c.value).join(',');
     const p = new URLSearchParams({ imagenes: ids });
+    for (const c of m.el.querySelectorAll('[data-incluir]:checked')) p.set(c.dataset.incluir, '1');
     if (descargar) p.set('descargar', '1');
     return `/api/trabajos/${trabajoId}/orden-produccion.pdf?${p}`;
   };

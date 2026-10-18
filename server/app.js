@@ -12,6 +12,7 @@ const pagos = require('./modules/pagos');
 const solicitudes = require('./modules/solicitudes');
 const cotizaciones = require('./modules/cotizaciones');
 const miDia = require('./modules/mi-dia');
+const opencutlist = require('./modules/opencutlist');
 const almacen = require('./lib/almacen');
 const { importacionInicial } = require('./importar');
 
@@ -35,7 +36,8 @@ function preparar() {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.use(express.json({ limit: '1mb' }));
+// Los CSV de OpenCutList llegan en el cuerpo de la petición (Vercel admite hasta 4,5 MB).
+app.use(express.json({ limit: '4mb' }));
 app.use(cookieParser());
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -121,6 +123,7 @@ const MODULOS = [
   { ruta: '/api/solicitudes', router: solicitudes.router },
   { ruta: '/api/notificaciones', router: solicitudes.notificaciones },
   { ruta: '/api/mi-dia', router: miDia.router },
+  { ruta: '/api/opencutlist', router: opencutlist.router },
 ];
 for (const m of MODULOS) {
   app.use(m.ruta, ...privado, ...(m.soloAdmin ? [auth.requiereAdmin] : []), m.router);

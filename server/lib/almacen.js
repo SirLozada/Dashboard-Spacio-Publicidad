@@ -76,6 +76,25 @@ async function enviar(req, res, adjunto) {
   res.sendFile(path.join(DIR_LOCAL, path.basename(adjunto.archivo)));
 }
 
+// Guarda un archivo generado en el servidor (p. ej. el CSV original de OpenCutList).
+// carpeta: prefijo en Vercel Blob. Devuelve lo que se registra en la columna "archivo".
+async function guardar(carpeta, nombre, contenido, mime) {
+  if (MODO === 'blob') {
+    const { put } = require('@vercel/blob');
+    const r = await put(`${carpeta}/${nombre.replace(/[^\w.-]+/g, '-').slice(-100)}`, contenido, {
+      access: ACCESO_BLOB,
+      addRandomSuffix: true,
+      contentType: mime,
+    });
+    return r.url;
+  }
+  await fs.promises.mkdir(DIR_LOCAL, { recursive: true });
+  const ext = path.extname(nombre).toLowerCase().replace(/[^.a-z0-9]/g, '').slice(0, 10);
+  const archivo = `${crypto.randomUUID()}${ext}`;
+  await fs.promises.writeFile(path.join(DIR_LOCAL, archivo), contenido);
+  return archivo;
+}
+
 // Contenido de un archivo (p. ej. imágenes para la orden de producción).
 async function leer(archivo) {
   if (esUrlBlob(archivo)) {
@@ -105,4 +124,4 @@ async function borrar(archivo) {
   }
 }
 
-module.exports = { MODO, ACCESO_BLOB, MAX_BYTES, esUrlBlob, subidaLocal, tokenSubida, enviar, leer, borrar };
+module.exports = { MODO, ACCESO_BLOB, MAX_BYTES, esUrlBlob, subidaLocal, tokenSubida, enviar, guardar, leer, borrar };

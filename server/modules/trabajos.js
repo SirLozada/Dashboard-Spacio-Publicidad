@@ -265,7 +265,7 @@ router.get('/:id/orden-produccion.pdf', async (req, res) => {
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `${req.query.descargar ? 'attachment' : 'inline'}; filename="${nombre}"`);
   res.setHeader('Cache-Control', 'no-store');
-  await ordenProduccion.generarPdf(datos, ids, res);
+  await ordenProduccion.generarPdf(datos, ids, res, { despiece: req.query.despiece === '1', diagramas: req.query.diagramas === '1' });
 });
 
 router.post('/', async (req, res) => {
@@ -304,10 +304,17 @@ router.delete('/:id', requiereAdmin, async (req, res) => {
   if (await db.value('SELECT 1 FROM solicitudes WHERE trabajo_id = ? LIMIT 1', id)) {
     throw new HttpError(400, 'No se puede eliminar: el trabajo tiene solicitudes y novedades registradas (se conservan como historial)');
   }
-  const archivos = await db.column('SELECT archivo FROM adjuntos WHERE trabajo_id = ?', id);
+  const archivos = [
+    ...(await db.column('SELECT archivo FROM adjuntos WHERE trabajo_id = ?', id)),
+    ...(await db.column('SELECT a.archivo FROM ocl_archivos a JOIN ocl_importaciones i ON i.id = a.importacion_id WHERE i.trabajo_id = ?', id)),
+  ];
   await db.transaction(async (tx) => {
     await tx.run('DELETE FROM adjuntos WHERE trabajo_id = ?', id);
     await tx.run('DELETE FROM trabajo_pendientes WHERE trabajo_id = ?', id);
+    for (const tabla of ['ocl_archivos', 'ocl_piezas', 'ocl_materiales']) {
+      await tx.run(`DELETE FROM ${tabla} WHERE importacion_id IN (SELECT id FROM ocl_importaciones WHERE trabajo_id = ?)`, id);
+    }
+    await tx.run('DELETE FROM ocl_importaciones WHERE trabajo_id = ?', id);
     // Las tareas y notas de «Mi día» se conservan, sin el vínculo al proyecto.
     await tx.run('UPDATE tareas SET trabajo_id = NULL WHERE trabajo_id = ?', id);
     await tx.run('UPDATE notas_personales SET trabajo_id = NULL WHERE trabajo_id = ?', id);
