@@ -170,3 +170,16 @@ test('eliminar una versión: sólo administradores; la anterior vuelve a ser la 
   assert.strictEqual((await fernando(`/opencutlist/importacion/${historial[0].id}`, { method: 'DELETE' })).status, 200);
   assert.strictEqual((await ana(`/opencutlist/trabajo/${trabajo.id}`)).datos.vigente.version, 1);
 });
+
+test('despiece grande (400 piezas) se guarda completo en un solo envío', async () => {
+  const filas = Array.from({ length: 400 }, (_, i) => `P${i + 1};Pieza ${i + 1};${(i % 3) + 1};${600 + i} mm;300 mm;18 mm;Tablero;MDF ${i % 4 === 0 ? 'Negro' : 'Blanco'} 18`);
+  const csv = ['N.º;Nombre;Cant.;Largo;Ancho;Espesor;Tipo de material;Material', ...filas].join('\n');
+  const r = await ana(`/opencutlist/trabajo/${trabajo.id}`, { method: 'POST', body: { csv: [{ nombre: 'grande.csv', contenido: csv }] } });
+  assert.strictEqual(r.status, 201, JSON.stringify(r.datos));
+  const v = (await ana(`/opencutlist/trabajo/${trabajo.id}`)).datos.vigente;
+  assert.strictEqual(v.id, r.datos.id);
+  assert.strictEqual(v.piezas.length, 400);
+  assert.strictEqual(v.piezas[399].nombre, 'Pieza 400');
+  assert.deepStrictEqual(v.materiales.map((m) => m.nombre).sort(), ['MDF Blanco 18', 'MDF Negro 18']);
+  assert.strictEqual(v.archivos.length, 1);
+});

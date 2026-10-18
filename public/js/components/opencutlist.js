@@ -19,6 +19,18 @@ const CAMPOS_POR_TIPO = {
 const UNIDADES = ['Tablero', 'Lámina', 'Barra', 'Metro lineal', 'Rollo', 'm²', 'Unidad'];
 const sinAcentos = (t) => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
+const GUIA = `<details class="ocl-guia">
+  <summary>${icon('alert')} ¿Qué archivos exporto desde OpenCutList?</summary>
+  <ol>
+    <li>En SketchUp abre <strong>OpenCutList</strong> y genera la lista del modelo.</li>
+    <li>Pulsa <strong>Exportar</strong> y elige <strong>Lista de piezas</strong> en formato <strong>CSV</strong>. Guarda el archivo.</li>
+    <li>Vuelve a pulsar <strong>Exportar</strong>, elige <strong>Resumen</strong> en <strong>CSV</strong> y guárdalo. Si el resumen trae la cantidad de tableros, se usa como cantidad a comprar.</li>
+    <li>Opcional: en <strong>Diagrama de corte 2D</strong>, imprime en PDF o exporta en SVG o DXF.</li>
+    <li>Aquí, arrastra todos los archivos juntos, revisa la vista previa y pulsa <strong>Guardar</strong>.</li>
+  </ol>
+  <p class="muted nota">Si el diseño cambia en SketchUp, repite los pasos: se guarda como una versión nueva y se muestran los cambios.</p>
+</details>`;
+
 let catalogo = null;
 const cargarCatalogo = async () => (catalogo = await api('/materiales').catch(() => catalogo || []));
 
@@ -135,8 +147,8 @@ export async function seccionOpenCutList(contenedor, trabajo) {
     if (!v) {
       contenedor.innerHTML = `<div class="ocl-vacio">
         ${vacio('Este proyecto todavía no tiene datos de OpenCutList', 'materiales')}
-        <p class="muted nota">En SketchUp, abre OpenCutList y exporta la <strong>lista de piezas</strong> y el <strong>resumen</strong> en CSV, y si quieres los <strong>diagramas de corte</strong> (PDF, SVG o DXF). Luego impórtalos aquí.</p>
         <button class="btn btn-primary" type="button" data-importar>${icon('upload')}Importar OpenCutList</button>
+        ${GUIA}
       </div>`;
       return;
     }
@@ -276,6 +288,7 @@ export async function importarOpenCutList(trabajo, vigente, { alGuardar } = {}) 
     wide: true,
     titulo: `${icon('upload')} Importar OpenCutList`,
     body: `<div class="ocl-importar">
+      ${GUIA}
       <label class="dropzone" data-zona>
         ${icon('upload')}
         <strong>Elige o arrastra los archivos exportados desde OpenCutList</strong>
@@ -471,12 +484,21 @@ export async function importarOpenCutList(trabajo, vigente, { alGuardar } = {}) 
           diagramas: diagramas.length,
         },
       });
+      // La versión ya quedó guardada: si fallan los diagramas no se reintenta todo (se duplicaría).
+      let fallaDiagramas = null;
       if (diagramas.length) {
-        await subirArchivos({ ruta: `/opencutlist/importacion/${r.id}/archivos`, carpeta: `opencutlist/${trabajo.id}/${r.id}`, archivos: diagramas });
+        try {
+          await subirArchivos({ ruta: `/opencutlist/importacion/${r.id}/archivos`, carpeta: `opencutlist/${trabajo.id}/${r.id}`, archivos: diagramas });
+        } catch (err) {
+          fallaDiagramas = err;
+        }
       }
-      toast(vigente ? `Versión ${vigente.version + 1} guardada` : 'Datos de OpenCutList importados');
       m.close();
       alGuardar?.();
+      if (fallaDiagramas) {
+        toast(`Versión ${r.version} guardada, pero no se pudieron subir los diagramas (${fallaDiagramas.message}). Agrégalos con «Agregar» en Diagramas de corte.`, 'error');
+      } else toast(r.version > 1 ? `Versión ${r.version} guardada` : 'Datos de OpenCutList importados');
+      (r.avisos || []).forEach((a) => toast(a, 'error'));
     } catch (err) {
       toast(err.message, 'error');
       botonConfirmar.disabled = false;

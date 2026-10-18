@@ -129,46 +129,70 @@ router.post('/trabajo/:trabajoId', async (req, res) => {
   });
 
   const cambios = anterior ? diferencias(anterior, datos) : null;
-  const id = await db.transaction(async (tx) => {
-    const version = (await tx.value('SELECT COALESCE(MAX(version), 0) + 1 FROM ocl_importaciones WHERE trabajo_id = ?', t.id)) || 1;
-    const { lastInsertRowid } = await tx.run(
-      'INSERT INTO ocl_importaciones (trabajo_id, version, nota, diferencias, creado_por) VALUES (?, ?, ?, ?, ?)',
-      t.id,
-      version,
-      texto(b.nota, 500) || (!csvs.length ? 'Actualización de diagramas de corte' : null),
-      cambios ? JSON.stringify(cambios) : null,
-      req.usuario.id
-    );
-    for (const [i, m] of datos.materiales.slice(0, 300).entries()) {
-      await tx.run(
-        `INSERT INTO ocl_materiales (importacion_id, nombre, tipo, espesor, formato, cantidad_comercial, origen_cantidad, unidad_compra,
-           cantidad_piezas, total, observaciones, material_id, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        lastInsertRowid, texto(m.nombre, 200) || 'Sin material', texto(m.tipo, 80), texto(m.espesor, 40), texto(m.formato, 80),
-        m.cantidad_comercial, m.origen_cantidad, texto(m.unidad_compra, 40), numero(m.cantidad_piezas), texto(m.total, 120),
-        texto(m.observaciones, 500), m.material_id, i
-      );
-    }
-    for (const [i, p] of datos.piezas.slice(0, 5000).entries()) {
-      await tx.run(
-        `INSERT INTO ocl_piezas (importacion_id, numero, nombre, material, cantidad, largo, ancho, espesor, observaciones, orden)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        lastInsertRowid, texto(p.numero, 40), texto(p.nombre, 200) || 'Pieza', texto(p.material, 200), numero(p.cantidad) ?? 1,
-        texto(p.largo, 40), texto(p.ancho, 40), texto(p.espesor, 40), texto(p.observaciones, 500), i
-      );
-    }
-    return lastInsertRowid;
-  });
+  const version = ((await db.value('SELECT MAX(version) FROM ocl_importaciones WHERE trabajo_id = ?', t.id)) || 0) + 1;
 
-  // Los CSV originales se guardan como historial.
+  // 1. Los CSV originales se guardan como historial (si falla, se avisa pero se importa igual).
+  const avisos = [];
+  const originales = [];
   for (const c of csvs) {
     const nombre = texto(c.nombre, 200) || 'opencutlist.csv';
-    const archivo = await almacen.guardar(`opencutlist/${t.id}/${id}`, nombre, Buffer.from(c.contenido, 'utf8'), 'text/csv');
-    await db.run(
-      'INSERT INTO ocl_archivos (importacion_id, tipo, nombre_original, archivo, mime, tamano, subido_por) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      id, 'csv', nombre, archivo, 'text/csv', Buffer.byteLength(c.contenido), req.usuario.id
-    );
+    try {
+      const archivo = await almacen.guardar(`opencutlist/${t.id}/v${version}`, nombre, Buffer.from(c.contenido, 'utf8'), 'text/csv');
+      originales.push({ nombre, archivo, tamano: Buffer.byteLength(c.contenido) });
+    } catch (err) {
+      console.error('OpenCutList: no se pudo guardar el CSV original', nombre, err);
+      avisos.push(`No se pudo guardar una copia del archivo original "${nombre}" (${err.message}). Los datos sí se importaron.`);
+    }
   }
-  res.status(201).json({ id, diferencias: cambios });
+
+  // 2. Todo lo demás en un solo envío atómico: la versión, sus materiales, piezas y archivos.
+  const ID = '(SELECT id FROM ocl_importaciones WHERE trabajo_id = ? AND version = ?)';
+  const sentencias = [
+    {
+      sql: 'INSERT INTO ocl_importaciones (trabajo_id, version, nota, diferencias, creado_por) VALUES (?, ?, ?, ?, ?)',
+      args: [t.id, version, texto(b.nota, 500) || (!csvs.length ? 'Actualización de diagramas de corte' : null), cambios ? JSON.stringify(cambios) : null, req.usuario.id],
+    },
+  ];
+  // Inserta filas de a grupos (una sentencia por grupo).
+  const porGrupos = (tabla, columnas, filas) => {
+    for (let i = 0; i < filas.length; i += 50) {
+      const grupo = filas.slice(i, i + 50);
+      sentencias.push({
+        sql: `INSERT INTO ${tabla} (importacion_id, ${columnas.join(', ')}) VALUES ${grupo.map(() => `(${ID}, ${columnas.map(() => '?').join(', ')})`).join(', ')}`,
+        args: grupo.flatMap((fila) => [t.id, version, ...fila]),
+      });
+    }
+  };
+  porGrupos(
+    'ocl_materiales',
+    ['nombre', 'tipo', 'espesor', 'formato', 'cantidad_comercial', 'origen_cantidad', 'unidad_compra', 'cantidad_piezas', 'total', 'observaciones', 'material_id', 'orden'],
+    datos.materiales.slice(0, 300).map((m, i) => [
+      texto(m.nombre, 200) || 'Sin material', texto(m.tipo, 80), texto(m.espesor, 40), texto(m.formato, 80), m.cantidad_comercial, m.origen_cantidad,
+      texto(m.unidad_compra, 40), numero(m.cantidad_piezas), texto(m.total, 120), texto(m.observaciones, 500), m.material_id, i,
+    ])
+  );
+  porGrupos(
+    'ocl_piezas',
+    ['numero', 'nombre', 'material', 'cantidad', 'largo', 'ancho', 'espesor', 'observaciones', 'orden'],
+    datos.piezas.slice(0, 5000).map((p, i) => [
+      texto(p.numero, 40), texto(p.nombre, 200) || 'Pieza', texto(p.material, 200), numero(p.cantidad) ?? 1,
+      texto(p.largo, 40), texto(p.ancho, 40), texto(p.espesor, 40), texto(p.observaciones, 500), i,
+    ])
+  );
+  porGrupos(
+    'ocl_archivos',
+    ['tipo', 'nombre_original', 'archivo', 'mime', 'tamano', 'subido_por'],
+    originales.map((o) => ['csv', o.nombre, o.archivo, 'text/csv', o.tamano, req.usuario.id])
+  );
+  try {
+    await db.batch(sentencias);
+  } catch (err) {
+    await Promise.all(originales.map((o) => almacen.borrar(o.archivo)));
+    if (/UNIQUE/i.test(err.message)) throw new HttpError(409, 'Otra persona guardó una versión al mismo tiempo. Vuelve a intentarlo.');
+    throw err;
+  }
+  const id = await db.value('SELECT id FROM ocl_importaciones WHERE trabajo_id = ? AND version = ?', t.id, version);
+  res.status(201).json({ id, version, diferencias: cambios, avisos });
 });
 
 // Diagramas de corte (PDF, SVG, DXF) de una versión.

@@ -70,6 +70,12 @@ function consultas(ejecutor) {
 
 const db = {
   ...consultas(cliente),
+  // Varias sentencias en un solo envío y de forma atómica. Para guardar muchas
+  // filas: en Turso una transacción interactiva se cancela si tarda varios
+  // segundos, y cada sentencia de una transacción es un viaje a la base.
+  async batch(sentencias) {
+    return cliente.batch(sentencias.map(({ sql, args = [] }) => ({ sql, args: aArgs(args) })), 'write');
+  },
   // Ejecuta fn(tx) de forma atómica: si algo falla no se guarda nada.
   async transaction(fn) {
     const tx = await cliente.transaction('write');

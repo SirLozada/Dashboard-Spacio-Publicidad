@@ -138,7 +138,8 @@ app.get('/{*ruta}', (req, res) => res.sendFile(path.join(__dirname, '..', 'publi
 app.use((err, req, res, next) => {
   const status = err.status || (err.type === 'entity.parse.failed' ? 400 : 500);
   if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 ? 'Error interno del servidor' : err.message });
+  // En los errores internos se agrega la causa resumida para poder diagnosticarlos desde la pantalla.
+  res.status(status).json({ error: status >= 500 ? `Error interno del servidor (${String(err.message || err).slice(0, 160)})` : err.message });
 });
 
 module.exports = app;
