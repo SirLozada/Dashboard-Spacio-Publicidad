@@ -180,11 +180,12 @@ router.put('/:id', async (req, res) => {
     await tx.run('DELETE FROM cotizacion_viaticos WHERE cotizacion_id = ?', actual.id);
     for (const [i, p] of piezas.entries()) {
       const { lastInsertRowid: piezaId } = await tx.run(
-        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, costos_por, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         actual.id,
         t(p.nombre, 200) || `Pieza ${i + 1}`,
         t(p.descripcion_cliente, 3000),
         Math.max(0, n(p.cantidad, 1)),
+        p.costos_por === 'lote' ? 'lote' : 'unidad',
         0, // la comisión en monto por pieza ya no se usa: las comisiones van en % arriba
         p.viaticos_pct === null || p.viaticos_pct === undefined || p.viaticos_pct === '' ? null : n(p.viaticos_pct, 0),
         i
@@ -262,8 +263,8 @@ router.post('/unir', async (req, res) => {
     );
     for (const [i, p] of piezas.entries()) {
       const { lastInsertRowid: piezaId } = await tx.run(
-        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, 0, NULL, ?)',
-        nuevaId, p.nombre, p.descripcion_cliente, p.cantidad, i
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, costos_por, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, 0, NULL, ?)',
+        nuevaId, p.nombre, p.descripcion_cliente, p.cantidad, p.costos_por, i
       );
       for (const l of p.lineas) {
         await tx.run(
@@ -311,8 +312,8 @@ router.post('/:id/duplicar', async (req, res) => {
     );
     for (const p of c.piezas) {
       const { lastInsertRowid: piezaId } = await tx.run(
-        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        lastInsertRowid, p.nombre, p.descripcion_cliente, p.cantidad, p.comision_fija, p.viaticos_pct, p.orden
+        'INSERT INTO cotizacion_piezas (cotizacion_id, nombre, descripcion_cliente, cantidad, costos_por, comision_fija, viaticos_pct, orden) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        lastInsertRowid, p.nombre, p.descripcion_cliente, p.cantidad, p.costos_por, p.comision_fija, p.viaticos_pct, p.orden
       );
       for (const l of p.lineas) {
         await tx.run(
@@ -403,7 +404,10 @@ router.get('/:id/excel', async (req, res) => {
       r.getCell(5).numFmt = usd;
       r.getCell(6).numFmt = usd;
     }
-    etiqueta('TOTAL NETO DE COSTOS (Materiales + MO):', kp.costo_unitario);
+    if (kp.costos_por === 'lote') {
+      etiqueta(`TOTAL NETO DE COSTOS DE LAS ${p.cantidad} UNIDADES:`, kp.costo_lineas);
+      etiqueta(`COSTO UNITARIO (÷ ${p.cantidad}):`, kp.costo_unitario);
+    } else etiqueta('TOTAL NETO DE COSTOS (Materiales + MO):', kp.costo_unitario);
     let anterior = kp.costo_unitario;
     kp.pasos.forEach((paso, j) => {
       etiqueta(j === 0 ? 'MARGEN DE GANANCIA' : `COMISIÓN ${paso.nombre.toUpperCase()}`, paso.porcentaje, pct);

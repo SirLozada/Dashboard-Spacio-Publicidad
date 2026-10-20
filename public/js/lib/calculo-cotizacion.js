@@ -4,6 +4,8 @@
 //
 // Por pieza (valores por unidad):
 //   costo        = Σ cantidad × costo unitario de sus materiales y servicios
+//                  (si la pieza tiene «costos por lote», las líneas son el costo
+//                  de todas las unidades y se divide entre la cantidad a cotizar)
 //   con margen   = costo ÷ (1 − margen)                 (p. ej. 30 %)
 //   comisiones   = precio ÷ (1 − comisión), en cadena    (p. ej. Fernando 20 %, Darwin 5 %, Francisco…)
 //   fabricación  = precio final unitario × cantidad a cotizar
@@ -45,11 +47,15 @@ export function calcularCotizacion(c) {
 
   const piezas = (c.piezas || []).map((p) => {
     const cantidad = num(p.cantidad) || 0;
-    const costo = subtotalLineas(p.lineas);
+    const costoLineas = subtotalLineas(p.lineas);
+    const porLote = p.costos_por === 'lote';
+    const costo = porLote && cantidad > 0 ? costoLineas / cantidad : costoLineas;
     const { precio, pasos } = aplicarMargen(costo, margen, comisiones);
     return {
       nombre: p.nombre,
       cantidad,
+      costos_por: porLote ? 'lote' : 'unidad',
+      costo_lineas: costoLineas, // lo que suman las líneas (por unidad o del lote)
       costo_unitario: costo,
       precio_unitario: precio,
       pasos, // montos por unidad

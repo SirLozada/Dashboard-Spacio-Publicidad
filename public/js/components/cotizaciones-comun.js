@@ -107,7 +107,8 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
 
   function resumenPieza(kp) {
     const pasos = kp.pasos.map((p) => `<span>+ ${esc(p.nombre)} ${pctTxt(p.porcentaje)}: <b>${usd(p.monto)}</b></span>`).join('');
-    return `<span>Costo unitario: <b>${usd(kp.costo_unitario)}</b></span>${pasos}
+    const lote = kp.costos_por === 'lote' ? `<span>Costo de las ${aTexto(kp.cantidad)}: <b>${usd(kp.costo_lineas)}</b> ÷ ${aTexto(kp.cantidad)}</span>` : '';
+    return `${lote}<span>Costo unitario: <b>${usd(kp.costo_unitario)}</b></span>${pasos}
       <span class="precio">Precio unitario: <b>${usd(kp.precio_unitario)}</b></span>
       <span class="precio">× ${aTexto(kp.cantidad)} = <b>${usd(kp.fabricacion)}</b></span>`;
   }
@@ -215,6 +216,9 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
               <div class="cot-pieza-cab">
                 <label class="field" style="flex:2.2"><span>Pieza</span>${campoTxt(`data-pieza="${i}" data-campo="nombre"`, p.nombre)}</label>
                 <label class="field" style="flex:.8"><span>Cantidad a cotizar</span>${campoNum(`data-pieza="${i}" data-campo="cantidad"`, p.cantidad)}</label>
+                <label class="field" style="flex:1.3"><span>Los costos de abajo son de</span><select class="input" data-pieza="${i}" data-campo="costos_por">
+                  <option value="unidad" ${p.costos_por !== 'lote' ? 'selected' : ''}>Una unidad (se multiplica)</option>
+                  <option value="lote" ${p.costos_por === 'lote' ? 'selected' : ''}>Todas las unidades (se divide)</option></select></label>
                 ${manual ? `<label class="field" style="flex:.8"><span>% de viáticos</span>${campoNum(`data-pieza="${i}" data-campo="viaticos_pct" data-pct`, (p.viaticos_pct ?? 0) * 100)}</label>` : ''}
                 <div class="cot-pieza-acciones">
                   <button class="btn btn-sm" type="button" data-accion="duplicar-pieza" data-pieza="${i}" title="Duplicar pieza">Duplicar</button>
@@ -381,7 +385,7 @@ export async function editorCotizacion(id, { alCambiar } = {}) {
         doc.piezas[i].lineas.splice(j, 1);
         break;
       case 'agregar-pieza':
-        doc.piezas.push({ nombre: `Pieza ${doc.piezas.length + 1}`, cantidad: 1, viaticos_pct: null, lineas: [lineaVacia()] });
+        doc.piezas.push({ nombre: `Pieza ${doc.piezas.length + 1}`, cantidad: 1, costos_por: 'unidad', viaticos_pct: null, lineas: [lineaVacia()] });
         break;
       case 'duplicar-pieza': {
         const copia = structuredClone(doc.piezas[i]);

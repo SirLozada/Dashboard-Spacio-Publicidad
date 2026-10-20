@@ -195,3 +195,25 @@ test('moneda de pago: sin valor por defecto, se elige en el documento del client
   assert.strictEqual(conDivisas.moneda, 'divisas');
   assert.strictEqual((await pedir(`/cotizaciones/${c.id}/duplicar`, { method: 'POST' })).datos.moneda, 'divisas');
 });
+
+test('costos por lote: las líneas son de todas las unidades y se dividen entre la cantidad', async () => {
+  const t = await pedir('/trabajos', { method: 'POST', body: { cliente: 'LOTE', descripcion: 'Muebles' } });
+  const nueva = await pedir('/cotizaciones', { method: 'POST', body: { trabajo_id: t.datos.id } });
+  // Cotización de Fernando: 8 muebles, $2.976 de materiales y mano de obra para los 8
+  const lineas = L([['Melamina', 20, 75], ['Corte', 20, 10], ['Ferretería', 8, 20], ['Tapa tornillo', 4, 5], ['Canto', 160, 0.7], ['Pega amarilla', 2, 20], ['Pega cola', 1, 20], ['Deslizadores', 4, 5], ['Mano de obra', 8, 100], ['Gasolina', 1, 40], ['Envoplast', 2, 12], ['Gastos', 8, 5]]);
+  const r = await pedir(`/cotizaciones/${nueva.datos.id}`, {
+    method: 'PUT',
+    body: { ...nueva.datos, comisiones: [], piezas: [{ nombre: 'Mueble', cantidad: 8, costos_por: 'lote', lineas }] },
+  });
+  const kp = r.datos.calculo.piezas[0];
+  assert.strictEqual(r.datos.piezas[0].costos_por, 'lote');
+  assert.strictEqual(kp.costo_lineas.toFixed(2), '2976.00');
+  assert.strictEqual(kp.costo_unitario.toFixed(2), '372.00');
+  assert.strictEqual(kp.fabricacion.toFixed(2), (2976 / 0.7).toFixed(2)); // no se multiplica por 8
+  // La copia conserva el modo
+  const copia = await pedir(`/cotizaciones/${nueva.datos.id}/duplicar`, { method: 'POST' });
+  assert.strictEqual(copia.datos.piezas[0].costos_por, 'lote');
+  assert.strictEqual((await pedir(`/cotizaciones/${nueva.datos.id}/excel`)).status, 200);
+  await pedir(`/cotizaciones/${copia.datos.id}`, { method: 'DELETE' });
+  await pedir(`/cotizaciones/${nueva.datos.id}`, { method: 'DELETE' });
+});
